@@ -14,6 +14,7 @@ import {
   createAssignmentComment,
   deleteAssignmentComment,
   cancelReturnedSubmission,
+  updateAssignment,
 } from "../controllers/assignmentController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import uploadAssignmentFile from "../middleware/uploadAssignmentFIle.js";
@@ -51,5 +52,6 @@ router.patch(
   protect,
   cancelReturnedSubmission,
 );
+router.patch("/:assignmentId", protect, updateAssignment);
 
 export default router;

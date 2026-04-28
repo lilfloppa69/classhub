@@ -6,8 +6,10 @@ import {
   Users,
   MessageSquareText,
   Trophy,
+  GraduationCap,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import api from '../../services/api'
 
 export default function ClassHeader({
   isSidebarCollapsed,
@@ -19,6 +21,23 @@ export default function ClassHeader({
   const location = useLocation()
   const { classId } = useParams()
   const { user, logout } = useAuth()
+  const [classData, setClassData] = useState(null)
+
+  useEffect(() => {
+    const fetchClassData = async () => {
+      if (!classId) return
+
+      try {
+        const res = await api.get(`/classes/${classId}`)
+        setClassData(res.data?.data || null)
+      } catch (error) {
+        console.error('Failed to fetch class header data:', error)
+        setClassData(null)
+      }
+    }
+
+    fetchClassData()
+  }, [classId])
 
   const displayName =
     user?.displayNamePreference === 'nickname' && user?.nickname
@@ -26,6 +45,10 @@ export default function ClassHeader({
       : user?.displayNamePreference === 'username' && user?.username
         ? user.username
         : user?.fullName || 'Profile'
+
+  const isTeacher =
+    classData?.teacher?._id?.toString?.() === user?._id?.toString?.() ||
+    classData?.teacher?.toString?.() === user?._id?.toString?.()
 
   const buildAvatarUrl = (avatar) => {
     if (!avatar) return ''
@@ -82,6 +105,15 @@ export default function ClassHeader({
         location.pathname === `/classes/${classId}/forum` ||
         location.pathname.startsWith(`/classes/${classId}/forum/`),
     },
+    isTeacher
+      ? {
+          key: 'grades',
+          label: 'Grades',
+          icon: GraduationCap,
+          path: `/classes/${classId}/grades`,
+          isActive: location.pathname === `/classes/${classId}/grades`,
+        }
+      : null,
     {
       key: 'leaderboard',
       label: 'Leaderboard',
@@ -89,7 +121,7 @@ export default function ClassHeader({
       path: `/classes/${classId}/leaderboard`,
       isActive: location.pathname === `/classes/${classId}/leaderboard`,
     },
-  ]
+  ].filter(Boolean)
 
   useEffect(() => {
     const handleClickOutside = (event) => {

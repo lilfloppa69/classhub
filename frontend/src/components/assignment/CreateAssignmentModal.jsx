@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   X,
-  Plus,
   Link as LinkIcon,
   Upload,
   Bold,
@@ -13,7 +12,6 @@ import {
   ChevronDown,
   Trash2,
   FileText,
-  Image as ImageIcon,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -200,18 +198,35 @@ function LinkAttachmentModal({
   )
 }
 
+function toDateTimeLocalValue(date) {
+  if (!date) return ''
+
+  const parsed = new Date(date)
+
+  if (Number.isNaN(parsed.getTime())) return ''
+
+  const offset = parsed.getTimezoneOffset()
+  const localDate = new Date(parsed.getTime() - offset * 60 * 1000)
+
+  return localDate.toISOString().slice(0, 16)
+}
+
 export default function CreateAssignmentModal({
   isOpen,
   onClose,
   classId,
   className = '',
   onCreated,
+  mode = 'create',
+  assignmentId = '',
 }) {
+  const isEditMode = mode === 'edit'
   const textareaRef = useRef(null)
   const localFileInputRef = useRef(null)
 
   const [students, setStudents] = useState([])
   const [isLoadingStudents, setIsLoadingStudents] = useState(false)
+  const [isLoadingAssignment, setIsLoadingAssignment] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false)
   const [isAssignDropdownOpen, setIsAssignDropdownOpen] = useState(false)
@@ -248,7 +263,78 @@ export default function CreateAssignmentModal({
     setAutoGradingRules([createRule()])
     setIsAssignDropdownOpen(false)
     setIsLinkModalOpen(false)
+    setIsLoadingAssignment(false)
     setLinkValue('')
+  }
+
+  const fillFormFromAssignment = (assignment) => {
+    setTitle(assignment.title || '')
+    setTopic(assignment.topic || '')
+    setInstructions(assignment.instructions || '')
+
+    const nextDueDate = toDateTimeLocalValue(assignment.dueDate)
+    setDueDate(nextDueDate)
+    setHasDueDate(Boolean(nextDueDate))
+
+    setMaximumScore(
+      assignment.maximumScore !== undefined && assignment.maximumScore !== null
+        ? String(assignment.maximumScore)
+        : '',
+    )
+
+    setRequiredObjectives(
+      assignment.requiredObjectives?.length
+        ? assignment.requiredObjectives.map((item) => ({
+            text: item.text || '',
+            score: item.score ?? '',
+            xp: item.xp ?? '',
+          }))
+        : [createObjective()],
+    )
+
+    setBonusObjectives(
+      assignment.bonusObjectives?.length
+        ? assignment.bonusObjectives.map((item) => ({
+            text: item.text || '',
+            score: item.score ?? '',
+            xp: item.xp ?? '',
+          }))
+        : [createObjective()],
+    )
+
+    setAutoGradingRules(
+      assignment.autoGradingRules?.length
+        ? assignment.autoGradingRules.map((item) => ({
+            ruleType: item.ruleType || 'fileName',
+            value: item.value || '',
+            score: item.score ?? '',
+            xp: item.xp ?? '',
+          }))
+        : [createRule()],
+    )
+
+    setTeacherFiles(
+      (assignment.teacherFiles || []).map((item) => ({
+        id: crypto.randomUUID(),
+        url: item.url,
+        preview: item.preview || '',
+        fileType: item.fileType || inferFileType(item.url),
+        name: item.name || item.url,
+        source: 'existing',
+      })),
+    )
+
+    const assignedStudentIds = (assignment.assignedStudents || [])
+      .map((item) => (typeof item === 'string' ? item : item?._id || item?.id))
+      .filter(Boolean)
+
+    if (assignedStudentIds.length > 0) {
+      setAssignMode('custom')
+      setSelectedStudentIds(assignedStudentIds)
+    } else {
+      setAssignMode('all')
+      setSelectedStudentIds([])
+    }
   }
 
   useEffect(() => {
@@ -300,6 +386,34 @@ export default function CreateAssignmentModal({
     fetchClassInfo()
     fetchExistingTopics()
   }, [isOpen, classId])
+
+  useEffect(() => {
+    if (!isOpen || !isEditMode || !assignmentId) return
+
+    const fetchAssignmentForEdit = async () => {
+      try {
+        setIsLoadingAssignment(true)
+        const res = await api.get(`/assignments/${assignmentId}`)
+        const assignment = res.data?.data
+
+        if (!assignment) {
+          toast.error('Assignment not found')
+          return
+        }
+
+        fillFormFromAssignment(assignment)
+      } catch (error) {
+        console.error('Failed to fetch assignment for edit:', error)
+        toast.error(
+          error.response?.data?.message || 'Failed to load assignment',
+        )
+      } finally {
+        setIsLoadingAssignment(false)
+      }
+    }
+
+    fetchAssignmentForEdit()
+  }, [isOpen, isEditMode, assignmentId])
 
   useEffect(() => {
     if (!isOpen) {
@@ -533,14 +647,23 @@ export default function CreateAssignmentModal({
 
     try {
       setIsSubmitting(true)
-      await api.post(`/classes/${classId}/assignments`, payload)
-      toast.success('Assignment created')
+      if (isEditMode) {
+        await api.patch(`/assignments/${assignmentId}`, payload)
+        toast.success('Assignment updated')
+      } else {
+        await api.post(`/classes/${classId}/assignments`, payload)
+        toast.success('Assignment created')
+      }
+
       onCreated?.()
       onClose?.()
     } catch (error) {
-      console.error('Failed to create assignment:', error)
+      console.error('Failed to submit assignment:', error)
       toast.error(
-        error.response?.data?.message || 'Failed to create assignment',
+        error.response?.data?.message ||
+          (isEditMode
+            ? 'Failed to update assignment'
+            : 'Failed to create assignment'),
       )
     } finally {
       setIsSubmitting(false)
@@ -573,10 +696,12 @@ export default function CreateAssignmentModal({
           <div className="flex items-center justify-between border-b border-slate-200 px-8 py-5">
             <div>
               <h2 className="text-[34px] font-semibold tracking-[-0.02em] text-slate-900">
-                Create Assignment
+                {isEditMode ? 'Edit Assignment' : 'Create Assignment'}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                {className || 'Class assignment'}
+                {isEditMode
+                  ? `Update assignment${className ? ` for ${className}` : ''}`
+                  : className || 'Class assignment'}
               </p>
             </div>
 
@@ -593,641 +718,674 @@ export default function CreateAssignmentModal({
             onSubmit={handleSubmit}
             className="min-h-0 flex-1 overflow-y-auto px-8 py-7"
           >
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="space-y-5">
-                <section className="rounded-[28px] border border-slate-200 bg-white/70 p-6">
-                  <h3 className="mb-5 text-xl font-semibold text-slate-800">
-                    Basic Info
-                  </h3>
+            {isLoadingAssignment ? (
+              <div className="flex min-h-[520px] items-center justify-center rounded-[28px] border border-slate-200 bg-white/70 p-8 text-sm text-slate-500">
+                Loading assignment data...
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                  <div className="space-y-5">
+                    <section className="rounded-[28px] border border-slate-200 bg-white/70 p-6">
+                      <h3 className="mb-5 text-xl font-semibold text-slate-800">
+                        Basic Info
+                      </h3>
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <input
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Title"
-                      className="rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300"
-                    />
-
-                    <div className="space-y-3">
-                      <label className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <input
-                          type="checkbox"
-                          checked={hasDueDate}
-                          onChange={(e) => {
-                            setHasDueDate(e.target.checked)
-                            if (!e.target.checked) {
-                              setDueDate('')
-                            }
-                          }}
-                          className="h-4 w-4 accent-violet-600"
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          placeholder="Title"
+                          className="rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300"
                         />
-                        <span>Set due date</span>
-                      </label>
 
-                      {hasDueDate ? (
-                        <div className="relative">
-                          <input
-                            type="datetime-local"
-                            value={dueDate}
-                            onChange={(e) => setDueDate(e.target.value)}
-                            className="w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 pr-12 text-sm outline-none transition focus:border-violet-300"
-                          />
-                          <CalendarDays className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                        </div>
-                      ) : (
-                        <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-400">
-                          No due date
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <input
-                        list="assignment-topic-options"
-                        value={topic}
-                        onChange={(e) => setTopic(e.target.value)}
-                        placeholder="Topic"
-                        className="w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300"
-                      />
-
-                      <datalist id="assignment-topic-options">
-                        {existingTopics.map((item) => (
-                          <option key={item} value={item} />
-                        ))}
-                      </datalist>
-
-                      <p className="text-xs text-slate-400">
-                        Pilih topic yang sudah ada atau ketik topic baru.
-                      </p>
-                    </div>
-
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setIsAssignDropdownOpen((prev) => !prev)}
-                        className="flex w-full items-center justify-between rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 text-left text-sm text-slate-700 transition hover:border-violet-300"
-                      >
-                        <span className="truncate">
-                          {isLoadingStudents
-                            ? 'Loading students...'
-                            : selectedStudentNames}
-                        </span>
-                        <ChevronDown className="h-5 w-5 text-slate-400" />
-                      </button>
-
-                      {isAssignDropdownOpen ? (
-                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 rounded-[18px] border border-slate-200 bg-white p-3 shadow-[0_20px_50px_rgba(15,23,42,0.12)]">
-                          <button
-                            type="button"
-                            onClick={handleChooseAllStudents}
-                            className={`mb-2 flex w-full items-center justify-between rounded-[12px] px-3 py-2 text-sm transition ${
-                              assignMode === 'all'
-                                ? 'bg-violet-50 text-violet-700'
-                                : 'hover:bg-slate-50'
-                            }`}
-                          >
-                            <span>All students</span>
+                        <div className="space-y-3">
+                          <label className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                             <input
-                              readOnly
-                              checked={assignMode === 'all'}
                               type="checkbox"
+                              checked={hasDueDate}
+                              onChange={(e) => {
+                                setHasDueDate(e.target.checked)
+                                if (!e.target.checked) {
+                                  setDueDate('')
+                                }
+                              }}
                               className="h-4 w-4 accent-violet-600"
                             />
+                            <span>Set due date</span>
+                          </label>
+
+                          {hasDueDate ? (
+                            <div className="relative">
+                              <input
+                                type="datetime-local"
+                                value={dueDate}
+                                onChange={(e) => setDueDate(e.target.value)}
+                                className="w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 pr-12 text-sm outline-none transition focus:border-violet-300"
+                              />
+                              <CalendarDays className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                            </div>
+                          ) : (
+                            <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-400">
+                              No due date
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <input
+                            list="assignment-topic-options"
+                            value={topic}
+                            onChange={(e) => setTopic(e.target.value)}
+                            placeholder="Topic"
+                            className="w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300"
+                          />
+
+                          <datalist id="assignment-topic-options">
+                            {existingTopics.map((item) => (
+                              <option key={item} value={item} />
+                            ))}
+                          </datalist>
+
+                          <p className="text-xs text-slate-400">
+                            Pilih topic yang sudah ada atau ketik topic baru.
+                          </p>
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setIsAssignDropdownOpen((prev) => !prev)
+                            }
+                            className="flex w-full items-center justify-between rounded-[16px] border border-slate-200 bg-white px-4 py-3.5 text-left text-sm text-slate-700 transition hover:border-violet-300"
+                          >
+                            <span className="truncate">
+                              {isLoadingStudents
+                                ? 'Loading students...'
+                                : selectedStudentNames}
+                            </span>
+                            <ChevronDown className="h-5 w-5 text-slate-400" />
                           </button>
 
-                          <div className="max-h-56 overflow-y-auto">
-                            {students.map((student) => (
+                          {isAssignDropdownOpen ? (
+                            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 rounded-[18px] border border-slate-200 bg-white p-3 shadow-[0_20px_50px_rgba(15,23,42,0.12)]">
                               <button
-                                key={student._id}
                                 type="button"
-                                onClick={() => handleToggleStudent(student._id)}
-                                className={`flex w-full items-center justify-between rounded-[12px] px-3 py-2 text-sm transition ${
-                                  selectedStudentIds.includes(student._id)
+                                onClick={handleChooseAllStudents}
+                                className={`mb-2 flex w-full items-center justify-between rounded-[12px] px-3 py-2 text-sm transition ${
+                                  assignMode === 'all'
                                     ? 'bg-violet-50 text-violet-700'
                                     : 'hover:bg-slate-50'
                                 }`}
                               >
-                                <div className="min-w-0 text-left">
-                                  <p className="truncate font-medium">
-                                    {student.name}
-                                  </p>
-                                  {student.email ? (
-                                    <p className="truncate text-xs text-slate-400">
-                                      {student.email}
-                                    </p>
-                                  ) : null}
-                                </div>
-
+                                <span>All students</span>
                                 <input
                                   readOnly
-                                  checked={selectedStudentIds.includes(
-                                    student._id,
-                                  )}
+                                  checked={assignMode === 'all'}
                                   type="checkbox"
                                   className="h-4 w-4 accent-violet-600"
                                 />
                               </button>
+
+                              <div className="max-h-56 overflow-y-auto">
+                                {students.map((student) => (
+                                  <button
+                                    key={student._id}
+                                    type="button"
+                                    onClick={() =>
+                                      handleToggleStudent(student._id)
+                                    }
+                                    className={`flex w-full items-center justify-between rounded-[12px] px-3 py-2 text-sm transition ${
+                                      selectedStudentIds.includes(student._id)
+                                        ? 'bg-violet-50 text-violet-700'
+                                        : 'hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 text-left">
+                                      <p className="truncate font-medium">
+                                        {student.name}
+                                      </p>
+                                      {student.email ? (
+                                        <p className="truncate text-xs text-slate-400">
+                                          {student.email}
+                                        </p>
+                                      ) : null}
+                                    </div>
+
+                                    <input
+                                      readOnly
+                                      checked={selectedStudentIds.includes(
+                                        student._id,
+                                      )}
+                                      type="checkbox"
+                                      className="h-4 w-4 accent-violet-600"
+                                    />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+                        <div className="border-b border-slate-200 px-4 py-3">
+                          <textarea
+                            ref={textareaRef}
+                            value={instructions}
+                            onChange={(e) => setInstructions(e.target.value)}
+                            placeholder="Instructions"
+                            className="min-h-[220px] w-full resize-none border-none bg-transparent text-sm outline-none placeholder:text-slate-400"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 px-4 py-3">
+                          <MiniToolbarButton
+                            title="Bold"
+                            onClick={() => applyFormat('<b>', '</b>')}
+                          >
+                            <Bold className="h-4 w-4" />
+                          </MiniToolbarButton>
+
+                          <MiniToolbarButton
+                            title="Italic"
+                            onClick={() => applyFormat('<i>', '</i>')}
+                          >
+                            <Italic className="h-4 w-4" />
+                          </MiniToolbarButton>
+
+                          <MiniToolbarButton
+                            title="Underline"
+                            onClick={() => applyFormat('<u>', '</u>')}
+                          >
+                            <Underline className="h-4 w-4" />
+                          </MiniToolbarButton>
+
+                          <MiniToolbarButton
+                            title="Bullet list"
+                            onClick={() =>
+                              applyFormat('<ul><li>', '</li></ul>')
+                            }
+                          >
+                            <List className="h-4 w-4" />
+                          </MiniToolbarButton>
+
+                          <MiniToolbarButton
+                            title="Strikethrough"
+                            onClick={() => applyFormat('<s>', '</s>')}
+                          >
+                            <Strikethrough className="h-4 w-4" />
+                          </MiniToolbarButton>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-[28px] border border-slate-200 bg-white/70 p-6">
+                      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                        <div>
+                          <h3 className="mb-5 text-xl font-semibold text-slate-800">
+                            Attachment
+                          </h3>
+
+                          <div className="flex items-center gap-4">
+                            <button
+                              type="button"
+                              onClick={() => localFileInputRef.current?.click()}
+                              className="flex h-28 w-28 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
+                            >
+                              <Upload className="h-9 w-9" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setIsLinkModalOpen(true)}
+                              className="flex h-28 w-28 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
+                            >
+                              <LinkIcon className="h-9 w-9" />
+                            </button>
+
+                            <input
+                              ref={localFileInputRef}
+                              type="file"
+                              multiple
+                              className="hidden"
+                              onChange={handleUploadLocalFiles}
+                            />
+                          </div>
+
+                          <p className="mt-3 text-xs text-slate-400">
+                            {isUploadingAttachment
+                              ? 'Uploading attachment...'
+                              : 'Upload file from local folder or attach a link.'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <div className="mb-3 flex items-center justify-between">
+                            <h4 className="text-base font-semibold text-slate-700">
+                              Preview of attachment
+                            </h4>
+                            <span className="text-xs text-slate-400">
+                              {teacherFiles.length} item(s)
+                            </span>
+                          </div>
+
+                          <div className="h-[220px] overflow-y-auto rounded-[20px] border border-slate-200 bg-white p-3">
+                            {teacherFiles.length === 0 ? (
+                              <div className="flex h-full items-center justify-center rounded-[16px] border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
+                                No attachment yet
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {teacherFiles.map((item) => {
+                                  const isImage =
+                                    item.fileType === 'image' ||
+                                    item.preview ||
+                                    item.url.match(
+                                      /\.(jpg|jpeg|png|gif|webp)$/i,
+                                    )
+
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      className="flex items-center gap-3 rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3"
+                                    >
+                                      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-violet-100 text-violet-700">
+                                        {isImage ? (
+                                          <img
+                                            src={item.preview || item.url}
+                                            alt={item.name}
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : item.fileType === 'link' ? (
+                                          <LinkIcon className="h-5 w-5" />
+                                        ) : (
+                                          <FileText className="h-5 w-5" />
+                                        )}
+                                      </div>
+
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium text-slate-700">
+                                          {item.name || item.url}
+                                        </p>
+                                        <p className="truncate text-xs text-slate-400">
+                                          {item.fileType === 'link'
+                                            ? item.url
+                                            : item.fileType}
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleRemoveAttachment(item.id)
+                                        }
+                                        className="rounded-full p-2 text-slate-400 transition hover:bg-white hover:text-red-500"
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  <div className="space-y-5">
+                    <section className="rounded-[28px] border border-slate-200 bg-white/70 p-5">
+                      <h3 className="mb-4 text-xl font-semibold text-slate-800">
+                        Scoring
+                      </h3>
+
+                      <input
+                        type="number"
+                        min="0"
+                        value={maximumScore}
+                        onChange={(e) => setMaximumScore(e.target.value)}
+                        placeholder="Maximum Score"
+                        className="mb-5 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300"
+                      />
+
+                      <div className="space-y-5">
+                        <div>
+                          <div className="mb-3 flex items-end justify-between">
+                            <div>
+                              <h4 className="text-base font-semibold text-slate-700">
+                                Required Objectives
+                              </h4>
+                              <p className="text-xs text-slate-400">Optional</p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                addObjective(
+                                  setRequiredObjectives,
+                                  createObjective,
+                                )
+                              }
+                              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-violet-50 hover:text-violet-700"
+                            >
+                              + Add Objective
+                            </button>
+                          </div>
+
+                          <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
+                            {requiredObjectives.map((item, index) => (
+                              <div
+                                key={`required-${index}`}
+                                className="grid grid-cols-[minmax(0,1fr)_64px_64px_40px] gap-2"
+                              >
+                                <input
+                                  value={item.text}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setRequiredObjectives,
+                                      index,
+                                      'text',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder={`OBJ${index + 1}`}
+                                  className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.score}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setRequiredObjectives,
+                                      index,
+                                      'score',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Score"
+                                  className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.xp}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setRequiredObjectives,
+                                      index,
+                                      'xp',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="XP"
+                                  className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeObjective(
+                                      setRequiredObjectives,
+                                      index,
+                                    )
+                                  }
+                                  className="flex items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:text-red-500"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
                             ))}
                           </div>
                         </div>
-                      ) : null}
-                    </div>
-                  </div>
 
-                  <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-                    <div className="border-b border-slate-200 px-4 py-3">
-                      <textarea
-                        ref={textareaRef}
-                        value={instructions}
-                        onChange={(e) => setInstructions(e.target.value)}
-                        placeholder="Instructions"
-                        className="min-h-[220px] w-full resize-none border-none bg-transparent text-sm outline-none placeholder:text-slate-400"
-                      />
-                    </div>
+                        <div>
+                          <div className="mb-3 flex items-end justify-between">
+                            <div>
+                              <h4 className="text-base font-semibold text-slate-700">
+                                Bonus Objectives
+                              </h4>
+                              <p className="text-xs text-slate-400">Optional</p>
+                            </div>
 
-                    <div className="flex items-center gap-2 px-4 py-3">
-                      <MiniToolbarButton
-                        title="Bold"
-                        onClick={() => applyFormat('<b>', '</b>')}
-                      >
-                        <Bold className="h-4 w-4" />
-                      </MiniToolbarButton>
-
-                      <MiniToolbarButton
-                        title="Italic"
-                        onClick={() => applyFormat('<i>', '</i>')}
-                      >
-                        <Italic className="h-4 w-4" />
-                      </MiniToolbarButton>
-
-                      <MiniToolbarButton
-                        title="Underline"
-                        onClick={() => applyFormat('<u>', '</u>')}
-                      >
-                        <Underline className="h-4 w-4" />
-                      </MiniToolbarButton>
-
-                      <MiniToolbarButton
-                        title="Bullet list"
-                        onClick={() => applyFormat('<ul><li>', '</li></ul>')}
-                      >
-                        <List className="h-4 w-4" />
-                      </MiniToolbarButton>
-
-                      <MiniToolbarButton
-                        title="Strikethrough"
-                        onClick={() => applyFormat('<s>', '</s>')}
-                      >
-                        <Strikethrough className="h-4 w-4" />
-                      </MiniToolbarButton>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="rounded-[28px] border border-slate-200 bg-white/70 p-6">
-                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-                    <div>
-                      <h3 className="mb-5 text-xl font-semibold text-slate-800">
-                        Attachment
-                      </h3>
-
-                      <div className="flex items-center gap-4">
-                        <button
-                          type="button"
-                          onClick={() => localFileInputRef.current?.click()}
-                          className="flex h-28 w-28 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
-                        >
-                          <Upload className="h-9 w-9" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setIsLinkModalOpen(true)}
-                          className="flex h-28 w-28 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
-                        >
-                          <LinkIcon className="h-9 w-9" />
-                        </button>
-
-                        <input
-                          ref={localFileInputRef}
-                          type="file"
-                          multiple
-                          className="hidden"
-                          onChange={handleUploadLocalFiles}
-                        />
-                      </div>
-
-                      <p className="mt-3 text-xs text-slate-400">
-                        {isUploadingAttachment
-                          ? 'Uploading attachment...'
-                          : 'Upload file from local folder or attach a link.'}
-                      </p>
-                    </div>
-
-                    <div>
-                      <div className="mb-3 flex items-center justify-between">
-                        <h4 className="text-base font-semibold text-slate-700">
-                          Preview of attachment
-                        </h4>
-                        <span className="text-xs text-slate-400">
-                          {teacherFiles.length} item(s)
-                        </span>
-                      </div>
-
-                      <div className="h-[220px] overflow-y-auto rounded-[20px] border border-slate-200 bg-white p-3">
-                        {teacherFiles.length === 0 ? (
-                          <div className="flex h-full items-center justify-center rounded-[16px] border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
-                            No attachment yet
+                            <button
+                              type="button"
+                              onClick={() =>
+                                addObjective(
+                                  setBonusObjectives,
+                                  createObjective,
+                                )
+                              }
+                              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-violet-50 hover:text-violet-700"
+                            >
+                              + Add Objective
+                            </button>
                           </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {teacherFiles.map((item) => {
-                              const isImage =
-                                item.fileType === 'image' ||
-                                item.preview ||
-                                item.url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
 
-                              return (
-                                <div
-                                  key={item.id}
-                                  className="flex items-center gap-3 rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3"
+                          <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
+                            {bonusObjectives.map((item, index) => (
+                              <div
+                                key={`bonus-${index}`}
+                                className="grid grid-cols-[minmax(0,1fr)_64px_64px_40px] gap-2"
+                              >
+                                <input
+                                  value={item.text}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setBonusObjectives,
+                                      index,
+                                      'text',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder={`BOBJ${index + 1}`}
+                                  className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.score}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setBonusObjectives,
+                                      index,
+                                      'score',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Score"
+                                  className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.xp}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setBonusObjectives,
+                                      index,
+                                      'xp',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="XP"
+                                  className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeObjective(setBonusObjectives, index)
+                                  }
+                                  className="flex items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:text-red-500"
                                 >
-                                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-violet-100 text-violet-700">
-                                    {isImage ? (
-                                      <img
-                                        src={item.preview || item.url}
-                                        alt={item.name}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    ) : item.fileType === 'link' ? (
-                                      <LinkIcon className="h-5 w-5" />
-                                    ) : (
-                                      <FileText className="h-5 w-5" />
-                                    )}
-                                  </div>
-
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-medium text-slate-700">
-                                      {item.name || item.url}
-                                    </p>
-                                    <p className="truncate text-xs text-slate-400">
-                                      {item.fileType === 'link'
-                                        ? item.url
-                                        : item.fileType}
-                                    </p>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleRemoveAttachment(item.id)
-                                    }
-                                    className="rounded-full p-2 text-slate-400 transition hover:bg-white hover:text-red-500"
-                                  >
-                                    <X className="h-4 w-4" />
-                                  </button>
-                                </div>
-                              )
-                            })}
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        )}
+                        </div>
+
+                        <div className="rounded-[18px] bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                          <p>
+                            Required {requiredScoreTotal} pts • Bonus{' '}
+                            {bonusScoreTotal} pts • Rules {ruleScoreTotal} pts
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Teacher can still override score manually
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </section>
-              </div>
+                    </section>
 
-              <div className="space-y-5">
-                <section className="rounded-[28px] border border-slate-200 bg-white/70 p-5">
-                  <h3 className="mb-4 text-xl font-semibold text-slate-800">
-                    Scoring
-                  </h3>
-
-                  <input
-                    type="number"
-                    min="0"
-                    value={maximumScore}
-                    onChange={(e) => setMaximumScore(e.target.value)}
-                    placeholder="Maximum Score"
-                    className="mb-5 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300"
-                  />
-
-                  <div className="space-y-5">
-                    <div>
-                      <div className="mb-3 flex items-end justify-between">
+                    <section className="rounded-[28px] border border-slate-200 bg-white/70 p-5">
+                      <div className="mb-4 flex items-end justify-between">
                         <div>
-                          <h4 className="text-base font-semibold text-slate-700">
-                            Required Objectives
-                          </h4>
+                          <h3 className="text-xl font-semibold text-slate-800">
+                            Auto-Grading Rules
+                          </h3>
                           <p className="text-xs text-slate-400">Optional</p>
                         </div>
 
                         <button
                           type="button"
                           onClick={() =>
-                            addObjective(setRequiredObjectives, createObjective)
+                            addObjective(setAutoGradingRules, createRule)
                           }
                           className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-violet-50 hover:text-violet-700"
                         >
-                          + Add Objective
+                          + Add Rule
                         </button>
                       </div>
 
-                      <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
-                        {requiredObjectives.map((item, index) => (
+                      <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
+                        {autoGradingRules.map((rule, index) => (
                           <div
-                            key={`required-${index}`}
-                            className="grid grid-cols-[minmax(0,1fr)_64px_64px_40px] gap-2"
+                            key={`rule-${index}`}
+                            className="rounded-[18px] border border-slate-200 bg-white p-3"
                           >
-                            <input
-                              value={item.text}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setRequiredObjectives,
-                                  index,
-                                  'text',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder={`OBJ${index + 1}`}
-                              className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.score}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setRequiredObjectives,
-                                  index,
-                                  'score',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Score"
-                              className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.xp}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setRequiredObjectives,
-                                  index,
-                                  'xp',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="XP"
-                              className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeObjective(setRequiredObjectives, index)
-                              }
-                              className="flex items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:text-red-500"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="grid grid-cols-1 gap-3">
+                              <select
+                                value={rule.ruleType}
+                                onChange={(e) =>
+                                  updateObjective(
+                                    setAutoGradingRules,
+                                    index,
+                                    'ruleType',
+                                    e.target.value,
+                                  )
+                                }
+                                className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                              >
+                                <option value="fileName">fileName</option>
+                                <option value="fileFormat">fileFormat</option>
+                                <option value="fileNameAndFormat">
+                                  fileNameAndFormat
+                                </option>
+                                <option value="fileNumber">fileNumber</option>
+                                <option value="keyword">keyword</option>
+                              </select>
+
+                              <input
+                                value={rule.value}
+                                onChange={(e) =>
+                                  updateObjective(
+                                    setAutoGradingRules,
+                                    index,
+                                    'value',
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder={getRuleLabel(rule.ruleType)}
+                                className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                              />
+
+                              <div className="grid grid-cols-[1fr_1fr_40px] gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={rule.score}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setAutoGradingRules,
+                                      index,
+                                      'score',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Score"
+                                  className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={rule.xp}
+                                  onChange={(e) =>
+                                    updateObjective(
+                                      setAutoGradingRules,
+                                      index,
+                                      'xp',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="XP"
+                                  className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeObjective(setAutoGradingRules, index)
+                                  }
+                                  className="flex items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:text-red-500"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
-                    </div>
 
-                    <div>
-                      <div className="mb-3 flex items-end justify-between">
-                        <div>
-                          <h4 className="text-base font-semibold text-slate-700">
-                            Bonus Objectives
-                          </h4>
-                          <p className="text-xs text-slate-400">Optional</p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            addObjective(setBonusObjectives, createObjective)
-                          }
-                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-violet-50 hover:text-violet-700"
-                        >
-                          + Add Objective
-                        </button>
+                      <div className="mt-4 rounded-[18px] bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                        <p>
+                          Score preview if all rules pass: {ruleScoreTotal} pts
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Teacher can still override score manually
+                        </p>
                       </div>
-
-                      <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
-                        {bonusObjectives.map((item, index) => (
-                          <div
-                            key={`bonus-${index}`}
-                            className="grid grid-cols-[minmax(0,1fr)_64px_64px_40px] gap-2"
-                          >
-                            <input
-                              value={item.text}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setBonusObjectives,
-                                  index,
-                                  'text',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder={`BOBJ${index + 1}`}
-                              className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.score}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setBonusObjectives,
-                                  index,
-                                  'score',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Score"
-                              className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.xp}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setBonusObjectives,
-                                  index,
-                                  'xp',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="XP"
-                              className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeObjective(setBonusObjectives, index)
-                              }
-                              className="flex items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:text-red-500"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-[18px] bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                      <p>
-                        Required {requiredScoreTotal} pts • Bonus{' '}
-                        {bonusScoreTotal} pts • Rules {ruleScoreTotal} pts
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        Teacher can still override score manually
-                      </p>
-                    </div>
+                    </section>
                   </div>
-                </section>
+                </div>
 
-                <section className="rounded-[28px] border border-slate-200 bg-white/70 p-5">
-                  <div className="mb-4 flex items-end justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-800">
-                        Auto-Grading Rules
-                      </h3>
-                      <p className="text-xs text-slate-400">Optional</p>
-                    </div>
+                <div className="mt-7 flex items-center justify-end gap-3 border-t border-slate-200 pt-5">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="text-sm font-medium text-slate-500 transition hover:text-slate-800"
+                  >
+                    Cancel
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        addObjective(setAutoGradingRules, createRule)
-                      }
-                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-violet-50 hover:text-violet-700"
-                    >
-                      + Add Rule
-                    </button>
-                  </div>
-
-                  <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
-                    {autoGradingRules.map((rule, index) => (
-                      <div
-                        key={`rule-${index}`}
-                        className="rounded-[18px] border border-slate-200 bg-white p-3"
-                      >
-                        <div className="grid grid-cols-1 gap-3">
-                          <select
-                            value={rule.ruleType}
-                            onChange={(e) =>
-                              updateObjective(
-                                setAutoGradingRules,
-                                index,
-                                'ruleType',
-                                e.target.value,
-                              )
-                            }
-                            className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                          >
-                            <option value="fileName">fileName</option>
-                            <option value="fileFormat">fileFormat</option>
-                            <option value="fileNameAndFormat">
-                              fileNameAndFormat
-                            </option>
-                            <option value="fileNumber">fileNumber</option>
-                            <option value="keyword">keyword</option>
-                          </select>
-
-                          <input
-                            value={rule.value}
-                            onChange={(e) =>
-                              updateObjective(
-                                setAutoGradingRules,
-                                index,
-                                'value',
-                                e.target.value,
-                              )
-                            }
-                            placeholder={getRuleLabel(rule.ruleType)}
-                            className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                          />
-
-                          <div className="grid grid-cols-[1fr_1fr_40px] gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              value={rule.score}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setAutoGradingRules,
-                                  index,
-                                  'score',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Score"
-                              className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-
-                            <input
-                              type="number"
-                              min="0"
-                              value={rule.xp}
-                              onChange={(e) =>
-                                updateObjective(
-                                  setAutoGradingRules,
-                                  index,
-                                  'xp',
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="XP"
-                              className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-violet-300"
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeObjective(setAutoGradingRules, index)
-                              }
-                              className="flex items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:text-red-500"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 rounded-[18px] bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                    <p>Score preview if all rules pass</p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      Teacher can still override score manually
-                    </p>
-                  </div>
-                </section>
-              </div>
-            </div>
-
-            <div className="mt-7 flex items-center justify-end gap-3 border-t border-slate-200 pt-5">
-              <button
-                type="button"
-                onClick={onClose}
-                className="text-sm font-medium text-slate-500 transition hover:text-slate-800"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded-[16px] bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-violet-200 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {isSubmitting ? 'Creating...' : 'Create Assignment'}
-              </button>
-            </div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="rounded-[16px] bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-violet-200 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isSubmitting
+                      ? isEditMode
+                        ? 'Saving...'
+                        : 'Creating...'
+                      : isEditMode
+                        ? 'Save Changes'
+                        : 'Create Assignment'}
+                  </button>
+                </div>
+              </>
+            )}
           </form>
         </div>
       </div>

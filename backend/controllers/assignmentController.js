@@ -947,6 +947,139 @@ export const createAssignment = async (req, res) => {
   }
 };
 
+export const updateAssignment = async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+
+    const assignment = await Assignment.findById(assignmentId);
+
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message: "Assignment not found",
+      });
+    }
+
+    const foundClass = await Class.findById(assignment.classId);
+
+    if (!foundClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+
+    if (!isTeacher) {
+      return res.status(403).json({
+        success: false,
+        message: "Only teacher can edit assignment",
+      });
+    }
+
+    const {
+      title,
+      topic,
+      instructions,
+      dueDate,
+      maximumScore,
+      requiredObjectives,
+      bonusObjectives,
+      submissionRules,
+      teacherFiles,
+      assignedStudents,
+      autoGradingRules,
+    } = req.body;
+
+    if (title !== undefined) assignment.title = title.trim();
+    if (topic !== undefined) assignment.topic = topic.trim() || "General";
+    if (instructions !== undefined)
+      assignment.instructions = instructions.trim();
+    if (dueDate !== undefined) assignment.dueDate = dueDate || null;
+    if (maximumScore !== undefined)
+      assignment.maximumScore = Number(maximumScore) || 0;
+
+    if (requiredObjectives !== undefined) {
+      assignment.requiredObjectives = requiredObjectives;
+    }
+
+    if (bonusObjectives !== undefined) {
+      assignment.bonusObjectives = bonusObjectives;
+    }
+
+    if (submissionRules !== undefined) {
+      assignment.submissionRules = submissionRules;
+    }
+
+    if (teacherFiles !== undefined) {
+      assignment.teacherFiles = teacherFiles;
+    }
+
+    if (autoGradingRules !== undefined) {
+      assignment.autoGradingRules = autoGradingRules;
+    }
+
+    const targetStudentIds =
+      Array.isArray(assignedStudents) && assignedStudents.length > 0
+        ? assignedStudents.map((id) => id.toString())
+        : foundClass.students.map((id) => id.toString());
+
+    assignment.assignedStudents = targetStudentIds;
+
+    const existingSubmissionMap = new Map(
+      assignment.submissions.map((submission) => [
+        submission.student.toString(),
+        submission,
+      ]),
+    );
+
+    assignment.submissions = targetStudentIds.map((studentId) => {
+      const existingSubmission = existingSubmissionMap.get(studentId);
+
+      if (existingSubmission) {
+        return existingSubmission;
+      }
+
+      return {
+        student: studentId,
+        files: [],
+        submittedAt: null,
+        score: 0,
+        xp: 0,
+        status: "assigned",
+        evaluation: {
+          requiredObjectives: [],
+          bonusObjectives: [],
+          autoRules: [],
+          autoGradingDisabled: false,
+          teacherComment: "",
+        },
+        activityHistory: [
+          {
+            type: "assigned",
+            date: new Date(),
+          },
+        ],
+      };
+    });
+
+    await assignment.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Assignment updated successfully",
+      data: assignment,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 export const uploadAssignmentFile = async (req, res) => {
   try {
     const { classId } = req.params;
@@ -1510,6 +1643,142 @@ export const evaluateAllSubmissions = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "All submissions evaluated",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+export const getClassGradebook = async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    const foundClass = await Class.findById(classId)
+      .populate(
+        "teacher",
+        "username fullName nickname avatar displayNamePreference",
+      )
+      .populate(
+        "students",
+        "username fullName nickname avatar displayNamePreference",
+      );
+
+    if (!foundClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const isTeacher =
+      foundClass.teacher?._id.toString() === req.user._id.toString();
+
+    const isStudent = foundClass.students.some(
+      (student) => student._id.toString() === req.user._id.toString(),
+    );
+
+    if (!isTeacher) {
+      return res.status(403).json({
+        success: false,
+        message: "Only teacher can access gradebook",
+      });
+    }
+
+    const assignments = await Assignment.find({ classId })
+      .select("title dueDate maximumScore submissions createdAt")
+      .sort({ createdAt: 1 })
+      .lean();
+
+    const students = foundClass.students.map((student) => {
+      const studentId = student._id.toString();
+
+      const grades = assignments.map((assignment) => {
+        const submission = assignment.submissions?.find(
+          (item) => item.student.toString() === studentId,
+        );
+
+        return {
+          assignmentId: assignment._id,
+          score: submission?.score ?? null,
+          xp: submission?.xp ?? 0,
+          status: submission?.status || "assigned",
+          maximumScore: assignment.maximumScore || 0,
+        };
+      });
+
+      const gradedScores = grades.filter((item) => item.score !== null);
+      const totalScore = gradedScores.reduce(
+        (sum, item) => sum + Number(item.score || 0),
+        0,
+      );
+
+      const totalMaximum = gradedScores.reduce(
+        (sum, item) => sum + Number(item.maximumScore || 0),
+        0,
+      );
+
+      const average =
+        totalMaximum > 0 ? Math.round((totalScore / totalMaximum) * 100) : 0;
+
+      return {
+        _id: student._id,
+        username: student.username,
+        fullName: student.fullName,
+        nickname: student.nickname,
+        avatar: student.avatar || "",
+        displayName:
+          student.displayName ||
+          student.fullName ||
+          student.nickname ||
+          student.username ||
+          "Student",
+        grades,
+        totalScore,
+        average,
+      };
+    });
+
+    const assignmentAverages = assignments.map((assignment) => {
+      const scores = students
+        .map((student) =>
+          student.grades.find(
+            (grade) =>
+              grade.assignmentId.toString() === assignment._id.toString(),
+          ),
+        )
+        .filter((grade) => grade && grade.score !== null)
+        .map((grade) => Number(grade.score || 0));
+
+      const average =
+        scores.length > 0
+          ? Math.round(
+              scores.reduce((sum, score) => sum + score, 0) / scores.length,
+            )
+          : null;
+
+      return {
+        assignmentId: assignment._id,
+        average,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Gradebook fetched successfully",
+      data: {
+        assignments: assignments.map((assignment) => ({
+          _id: assignment._id,
+          title: assignment.title,
+          dueDate: assignment.dueDate,
+          maximumScore: assignment.maximumScore || 0,
+        })),
+        students,
+        assignmentAverages,
+      },
     });
   } catch (error) {
     return res.status(500).json({

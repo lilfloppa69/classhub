@@ -18,6 +18,7 @@ import MyProfileInformationPage from '../pages/MyProfileInformationPage'
 import MyProfileShowcasePage from '../pages/MyProfileShowcasePage'
 import BecomeHybridPage from '../pages/BecomeHybridPage'
 import MyProfileAccountPage from '../pages/MyProfileAccountPage'
+import ClassGradesPage from '../pages/ClassGradesPage'
 
 export default function AppRoutes() {
   return (
@@ -105,6 +106,15 @@ export default function AppRoutes() {
           element={
             <MainLayout>
               <GeneralForumDetailPage />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/classes/:classId/grades"
+          element={
+            <MainLayout headerVariant="class">
+              <ClassGradesPage />
             </MainLayout>
           }
         />

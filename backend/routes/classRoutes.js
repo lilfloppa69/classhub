@@ -10,7 +10,10 @@ import {
   getClassAssignments,
 } from "../controllers/classController.js";
 import { protect } from "../middleware/authMiddleware.js";
-import { createAssignment } from "../controllers/assignmentController.js";
+import {
+  createAssignment,
+  getClassGradebook,
+} from "../controllers/assignmentController.js";
 import {
   createClassAchievement,
   getClassAchievements,
@@ -43,5 +46,6 @@ router.post(
   giveClassAchievementEarly,
 );
 router.get("/:classId/achievements", protect, getClassAchievements);
+router.get("/:classId/grades", protect, getClassGradebook);
 
 export default router;

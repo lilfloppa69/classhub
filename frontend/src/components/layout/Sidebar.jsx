@@ -1,9 +1,32 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { House, CalendarDays, FolderOpen } from 'lucide-react'
+import {
+  getMyClasses,
+  transformGroupedClassesToCards,
+} from '../../services/classService'
+
+function buildAvatarUrl(avatar) {
+  if (!avatar) return ''
+
+  if (avatar.startsWith('http://') || avatar.startsWith('https://')) {
+    return avatar
+  }
+
+  const apiBase =
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
+    'http://localhost:3000/api'
+
+  const originOnly = apiBase.replace(/\/+$/, '').replace(/\/api$/, '')
+  const normalizedAvatar = avatar.startsWith('/') ? avatar : `/${avatar}`
+
+  return `${originOnly}${normalizedAvatar}`
+}
 
 export default function Sidebar({ isCollapsed }) {
   const [isAssignedOpen, setIsAssignedOpen] = useState(true)
+  const [classes, setClasses] = useState([])
   const location = useLocation()
 
   const mainItems = [
@@ -11,7 +34,22 @@ export default function Sidebar({ isCollapsed }) {
     { label: 'Calendar', path: '/calendar', icon: CalendarDays },
   ]
 
-  const classItems = ['Class 1', 'Class 2', 'Class 3', 'Class 4']
+  useEffect(() => {
+    const fetchSidebarClasses = async () => {
+      try {
+        const grouped = await getMyClasses()
+        const transformed = transformGroupedClassesToCards(grouped)
+        setClasses(transformed)
+      } catch (error) {
+        console.error('Failed to fetch sidebar classes:', error)
+        setClasses([])
+      }
+    }
+
+    fetchSidebarClasses()
+  }, [])
+
+  const sidebarClasses = useMemo(() => classes.slice(0, 8), [classes])
 
   return (
     <aside
@@ -39,7 +77,8 @@ export default function Sidebar({ isCollapsed }) {
                   className={`h-5 w-5 shrink-0 ${
                     isActive ? 'text-black' : 'text-black/75'
                   }`}
-                />{' '}
+                />
+
                 <span
                   className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
                     isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
@@ -56,12 +95,13 @@ export default function Sidebar({ isCollapsed }) {
           <button
             type="button"
             onClick={() => setIsAssignedOpen((prev) => !prev)}
-            className={`flex min-h-[44px] w-full items-center rounded-xl px-3 py-2 hover:bg-black/5 transition ${
+            className={`flex min-h-[44px] w-full items-center rounded-xl px-3 py-2 transition hover:bg-black/5 ${
               isCollapsed ? 'justify-center' : 'justify-between'
             }`}
           >
             <div className={`flex items-center ${isCollapsed ? '' : 'gap-4'}`}>
-              <FolderOpen className="h-5 w-5 shrink-0 text-black" />{' '}
+              <FolderOpen className="h-5 w-5 shrink-0 text-black" />
+
               <span
                 className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
                   isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
@@ -87,28 +127,58 @@ export default function Sidebar({ isCollapsed }) {
               isCollapsed
                 ? 'max-h-0 opacity-0'
                 : isAssignedOpen
-                  ? 'mt-2 max-h-[320px] opacity-100'
+                  ? 'mt-2 max-h-[420px] opacity-100'
                   : 'max-h-0 opacity-0'
             }`}
           >
             <div className="ml-3 flex flex-col gap-2">
               <Link
                 to="/assigned"
-                className="rounded-xl px-3 py-2 text-sm hover:bg-black/5 transition"
+                className="rounded-xl px-3 py-2 text-sm transition hover:bg-black/5"
               >
                 List of tasks
               </Link>
 
-              {classItems.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm hover:bg-black/5 transition"
-                >
-                  <span className="h-6 w-6 rounded-full bg-[#CFCFCF]" />
-                  <span>{item}</span>
-                </button>
-              ))}
+              {sidebarClasses.length > 0 ? (
+                sidebarClasses.map((cls) => {
+                  const isActive = location.pathname.startsWith(
+                    `/classes/${cls._id}`,
+                  )
+
+                  const className = cls.title || cls.subject || 'Untitled Class'
+                  const teacherAvatar = buildAvatarUrl(cls.teacher?.avatar)
+
+                  return (
+                    <Link
+                      key={cls._id}
+                      to={`/classes/${cls._id}`}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${
+                        isActive
+                          ? 'bg-black/10 font-medium'
+                          : 'hover:bg-black/5'
+                      }`}
+                    >
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#CFCFCF] text-[11px] font-semibold text-black/70">
+                        {teacherAvatar ? (
+                          <img
+                            src={teacherAvatar}
+                            alt={className}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          className.charAt(0).toUpperCase()
+                        )}
+                      </span>
+
+                      <span className="truncate">{className}</span>
+                    </Link>
+                  )
+                })
+              ) : (
+                <p className="px-3 py-2 text-xs text-black/40">
+                  No classes yet
+                </p>
+              )}
             </div>
           </div>
         </div>
