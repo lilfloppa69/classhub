@@ -10,6 +10,7 @@ export default function MainLayout({
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [activeClassTab, setActiveClassTab] = useState('assignments')
+  const [classViewMode, setClassViewMode] = useState('grid')
 
   const sidebarWidthClass = isSidebarCollapsed ? 'ml-[84px]' : 'ml-[190px]'
 
@@ -29,6 +30,8 @@ export default function MainLayout({
             setIsSidebarCollapsed={setIsSidebarCollapsed}
             activeTab={activeClassTab}
             onTabChange={setActiveClassTab}
+            classViewMode={classViewMode}
+            onClassViewModeChange={setClassViewMode}
           />
         ))}
 
@@ -40,6 +43,7 @@ export default function MainLayout({
         {React.isValidElement(children)
           ? React.cloneElement(children, {
               activeTab: activeClassTab,
+              classViewMode,
             })
           : children}
       </main>

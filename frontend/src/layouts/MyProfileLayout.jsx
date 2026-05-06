@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 const tabs = [
   {
@@ -17,6 +18,12 @@ const tabs = [
 ]
 
 export default function MyProfileLayout({ children }) {
+  const { user } = useAuth()
+  const isTeacher = user?.role === 'teacher'
+  const visibleTabs = tabs.filter((tab) => {
+    if (isTeacher && tab.path === '/my-profile/showcase') return false
+    return true
+  })
   const navigate = useNavigate()
 
   return (
@@ -32,7 +39,7 @@ export default function MyProfileLayout({ children }) {
       <div className="mx-auto w-full max-w-[1280px] overflow-hidden rounded-[28px] bg-[#F8F8F8] shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
         <div className="bg-gradient-to-r from-[#bdd7f6] via-[#e9e3e7] to-[#efe8c6] px-12 pt-16 pb-0">
           <div className="flex flex-wrap items-end gap-6">
-            {tabs.map((tab) => (
+            {visibleTabs.map((tab) => (
               <NavLink
                 key={tab.path}
                 to={tab.path}

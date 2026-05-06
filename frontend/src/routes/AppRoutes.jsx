@@ -19,6 +19,7 @@ import MyProfileShowcasePage from '../pages/MyProfileShowcasePage'
 import BecomeHybridPage from '../pages/BecomeHybridPage'
 import MyProfileAccountPage from '../pages/MyProfileAccountPage'
 import ClassGradesPage from '../pages/ClassGradesPage'
+import Calendar from '../pages/Calendar'
 
 export default function AppRoutes() {
   return (
@@ -133,6 +134,14 @@ export default function AppRoutes() {
         <Route
           path="/my-profile/become-hybrid"
           element={<BecomeHybridPage />}
+        />
+        <Route
+          path="/calendar"
+          element={
+            <MainLayout>
+              <Calendar />
+            </MainLayout>
+          }
         />
       </Routes>
     </BrowserRouter>

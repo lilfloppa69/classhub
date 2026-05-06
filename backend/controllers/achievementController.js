@@ -2,6 +2,7 @@ import Achievement from "../models/Achievement.js";
 import UserAchievement from "../models/UserAchievement.js";
 import Class from "../models/Class.js";
 import User from "../models/User.js";
+import { isClassTeacher } from "../utils/classAccess.js";
 
 export const createClassAchievement = async (req, res) => {
   try {
@@ -26,7 +27,7 @@ export const createClassAchievement = async (req, res) => {
       });
     }
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
@@ -83,7 +84,7 @@ export const giveClassAchievementEarly = async (req, res) => {
       });
     }
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({

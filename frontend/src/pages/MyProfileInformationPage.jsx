@@ -196,7 +196,7 @@ export default function MyProfileInformationPage() {
   const avatarMenuRef = useRef(null)
 
   const avatarUrl = useMemo(() => buildAvatarUrl(form.avatar), [form.avatar])
-  const isHybrid = form.role === 'hybrid'
+  const isTeacher = form.role === 'teacher'
 
   const syncForm = (data) => {
     setForm({
@@ -364,7 +364,7 @@ export default function MyProfileInformationPage() {
         timezone: form.timezone,
         gender: form.gender,
         language: form.language,
-        bio: isHybrid ? form.bio : undefined,
+        bio: isTeacher ? form.bio : undefined,
       })
 
       toast.success('Profile updated')
@@ -459,23 +459,23 @@ export default function MyProfileInformationPage() {
 
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold capitalize ${
-                      isHybrid
+                      isTeacher
                         ? 'bg-violet-100 text-violet-700'
                         : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    {isHybrid ? (
+                    {isTeacher ? (
                       <BadgeCheck className="h-3.5 w-3.5" />
                     ) : (
                       <Sparkles className="h-3.5 w-3.5" />
                     )}
-                    {form.role}
+                    {isTeacher ? 'Teacher' : formatText(form.role)}
                   </span>
                 </div>
 
                 <p className="mt-2 text-[18px] text-slate-500">{form.email}</p>
 
-                {isHybrid ? (
+                {isTeacher ? (
                   <p className="mt-2 text-sm font-medium text-violet-600">
                     {formatText(form.specialization.category)} •{' '}
                     {form.specialization.field || '-'}
@@ -586,7 +586,7 @@ export default function MyProfileInformationPage() {
             </div>
           </div>
 
-          {isHybrid ? (
+          {isTeacher ? (
             <div className="mt-8 rounded-[26px] border border-violet-100 bg-violet-50/50 p-6 shadow-sm">
               <div className="mb-6 flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
@@ -595,7 +595,7 @@ export default function MyProfileInformationPage() {
 
                 <div>
                   <h2 className="text-[22px] font-semibold text-slate-900">
-                    Hybrid Profile
+                    Teacher Profile
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
                     Your teacher-facing profile information.

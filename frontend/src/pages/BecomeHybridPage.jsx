@@ -95,7 +95,7 @@ export default function BecomeHybridPage() {
         bio: bio.trim(),
       })
 
-      toast.success('Successfully became a hybrid')
+      toast.success('Successfully became a teacher')
 
       if (typeof refreshUser === 'function') {
         await refreshUser()
@@ -104,7 +104,7 @@ export default function BecomeHybridPage() {
       navigate('/my-profile/account')
     } catch (error) {
       console.error('BECOME HYBRID ERROR:', error)
-      toast.error(error.response?.data?.message || 'Failed to become hybrid')
+      toast.error(error.response?.data?.message || 'Failed to become teacher')
     } finally {
       setIsSubmitting(false)
     }

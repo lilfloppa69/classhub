@@ -11,6 +11,7 @@ import generalForumRoutes from "./routes/generalForumRoutes.js";
 import classForumRoutes from "./routes/classForumRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import calendarRoutes from "./routes/calendarRoutes.js";
 import { seedAchievements } from "./scripts/seedAchievements.js";
 
 dotenv.config();
@@ -36,6 +37,7 @@ app.use("/api/classes", classForumRoutes);
 app.use("/api/forum", generalForumRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/my-profile", userRoutes);
+app.use("/api/calendar", calendarRoutes);
 app.use("/uploads", express.static(path.resolve("uploads")));
 
 // test route

@@ -193,14 +193,14 @@ export default function MyProfileAccountPage() {
                   Role
                 </label>
                 <input
-                  value={account.role || 'student'}
+                  value={account.role === 'teacher' ? 'teacher' : 'student'}
                   disabled
                   className="h-[52px] w-full rounded-[8px] bg-[#f4f4f4] px-5 text-[16px] capitalize text-slate-500 outline-none"
                 />
               </div>
             </div>
 
-            <div className="flex flex-col items-end gap-16 pt-[59px]">
+            <div className="flex flex-col items-end pt-[59px]">
               {!isEditing ? (
                 <button
                   type="button"
@@ -229,17 +229,6 @@ export default function MyProfileAccountPage() {
                   </button>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={() => navigate('/my-profile/become-hybrid')}
-                disabled={account.role === 'hybrid'}
-                className="rounded-[8px] bg-[#eaf1ff] px-6 py-3 text-[16px] font-medium text-[#3472ff] transition hover:bg-[#dfeaff] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {account.role === 'hybrid'
-                  ? 'You are already a hybrid'
-                  : 'I also wanna assign as a teacher'}
-              </button>
             </div>
           </div>
         </div>

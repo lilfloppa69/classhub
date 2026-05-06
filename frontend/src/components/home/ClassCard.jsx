@@ -16,10 +16,17 @@ export default function ClassCard({
   }
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="min-w-0 overflow-hidden rounded-[28px] border border-black/15 bg-white text-left transition hover:-translate-y-1 hover:shadow-md"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick?.()
+        }
+      }}
+      className="min-w-0 cursor-pointer overflow-hidden rounded-[28px] border border-black/15 bg-white text-left transition hover:-translate-y-1 hover:shadow-md"
     >
       <div className="relative bg-[#D9D9D9] px-8 pt-6 pb-8 pr-32">
         <div className="space-y-1 break-words text-[15px] leading-6 text-black">
@@ -70,6 +77,6 @@ export default function ClassCard({
           </button>
         </div>
       </div>
-    </button>
+    </div>
   )
 }

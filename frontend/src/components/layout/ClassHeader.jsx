@@ -46,9 +46,18 @@ export default function ClassHeader({
         ? user.username
         : user?.fullName || 'Profile'
 
-  const isTeacher =
-    classData?.teacher?._id?.toString?.() === user?._id?.toString?.() ||
-    classData?.teacher?.toString?.() === user?._id?.toString?.()
+  const isTeacher = (() => {
+    if (!classData || !user?._id) return false
+
+    const userId = String(user._id)
+    const ownerId = String(classData.teacher?._id || classData.teacher || '')
+
+    if (ownerId === userId) return true
+
+    return (classData.coTeachers || []).some(
+      (teacher) => String(teacher?._id || teacher) === userId,
+    )
+  })()
 
   const buildAvatarUrl = (avatar) => {
     if (!avatar) return ''

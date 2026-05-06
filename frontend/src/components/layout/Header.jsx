@@ -2,7 +2,12 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-export default function Header({ isSidebarCollapsed, setIsSidebarCollapsed }) {
+export default function Header({
+  isSidebarCollapsed,
+  setIsSidebarCollapsed,
+  classViewMode = 'grid',
+  onClassViewModeChange,
+}) {
   const navLeftPadding = isSidebarCollapsed ? 'pl-34' : 'pl-64'
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const dropdownRef = useRef(null)
@@ -37,6 +42,13 @@ export default function Header({ isSidebarCollapsed, setIsSidebarCollapsed }) {
 
   const avatarUrl = buildAvatarUrl(user?.avatar)
 
+  const isClassesActive = location.pathname === '/home'
+  const isDayView = classViewMode === 'day'
+
+  const handleToggleDayView = () => {
+    onClassViewModeChange?.(isDayView ? 'grid' : 'day')
+  }
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -63,7 +75,7 @@ export default function Header({ isSidebarCollapsed, setIsSidebarCollapsed }) {
   return (
     <header className="fixed left-0 right-0 top-0 z-50 w-full bg-[#F3EDED] px-6 pt-4 shadow-sm">
       {' '}
-      <div className="flex items-center justify-between">
+      <div className="relative flex items-center justify-between">
         <div className="flex items-center gap-5">
           <button
             type="button"
@@ -96,7 +108,33 @@ export default function Header({ isSidebarCollapsed, setIsSidebarCollapsed }) {
             </div>
           </div>
         </div>
+        {isClassesActive ? (
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-[58%]">
+            <button
+              type="button"
+              onClick={handleToggleDayView}
+              className={`pointer-events-auto inline-flex items-center gap-3 rounded-full border px-5 py-2 text-sm font-medium shadow-sm transition-all duration-300 ${
+                isDayView
+                  ? 'border-violet-200 bg-violet-50 text-violet-700'
+                  : 'border-black/10 bg-white/80 text-black/65 hover:bg-white'
+              }`}
+            >
+              <span>{isDayView ? 'Day view on' : 'Switch to day view'}</span>
 
+              <span
+                className={`relative h-7 w-12 rounded-full transition-all duration-300 ${
+                  isDayView ? 'bg-violet-600' : 'bg-black/20'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-all duration-300 ${
+                    isDayView ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
+        ) : null}
         <div className="relative" ref={dropdownRef}>
           <button
             type="button"

@@ -10,6 +10,8 @@ import {
   Medal,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 import api from '../services/api'
 import MyProfileLayout from '../layouts/MyProfileLayout'
@@ -298,6 +300,10 @@ function LoadingSkeleton() {
 }
 
 export default function MyProfileShowcasePage() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const isTeacher = user?.role === 'teacher'
+
   const [isLoading, setIsLoading] = useState(true)
   const [showcase, setShowcase] = useState(null)
   const [selectedAchievement, setSelectedAchievement] = useState(null)
@@ -305,7 +311,15 @@ export default function MyProfileShowcasePage() {
   const [isTogglingAchievement, setIsTogglingAchievement] = useState(false)
   const [leaderboardIndex, setLeaderboardIndex] = useState(0)
 
+  useEffect(() => {
+    if (isTeacher) {
+      navigate('/my-profile/information', { replace: true })
+    }
+  }, [isTeacher, navigate])
+
   const fetchShowcase = async () => {
+    if (isTeacher) return
+
     try {
       setIsLoading(true)
       const res = await api.get('/my-profile/showcase')

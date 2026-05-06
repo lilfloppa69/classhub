@@ -57,7 +57,7 @@ export default function ClassAssignmentsPage() {
   const [openTopics, setOpenTopics] = useState({})
   const [isCreateAssignmentModalOpen, setIsCreateAssignmentModalOpen] =
     useState(false)
-  const [isTeacher, setIsTeacher] = useState(false)
+  const [setIsTeacher] = useState(false)
 
   const fetchClassInfo = async () => {
     try {
@@ -113,39 +113,17 @@ export default function ClassAssignmentsPage() {
     return ['all', ...uniqueTopics]
   }, [groups])
 
-  const isTeacherOrHybrid = useMemo(() => {
+  const isTeacher = useMemo(() => {
     if (!classInfo || !user?._id) return false
 
     const userId = String(user._id)
+    const ownerId = String(classInfo.teacher?._id || classInfo.teacher || '')
 
-    if (String(classInfo.teacher?._id || classInfo.teacher || '') === userId) {
-      return true
-    }
+    if (ownerId === userId) return true
 
-    if (Array.isArray(classInfo.hybridStudents)) {
-      return classInfo.hybridStudents.some(
-        (item) => String(item?._id || item) === userId,
-      )
-    }
-
-    if (Array.isArray(classInfo.hybrids)) {
-      return classInfo.hybrids.some(
-        (item) => String(item?._id || item) === userId,
-      )
-    }
-
-    if (Array.isArray(classInfo.members)) {
-      return classInfo.members.some((member) => {
-        const memberId = String(
-          member?.user?._id || member?.user || member?._id || '',
-        )
-        const role = String(member?.role || '').toLowerCase()
-
-        return memberId === userId && ['teacher', 'hybrid'].includes(role)
-      })
-    }
-
-    return false
+    return (classInfo.coTeachers || []).some(
+      (teacher) => String(teacher?._id || teacher) === userId,
+    )
   }, [classInfo, user])
 
   const toggleTopic = (topic) => {
@@ -194,7 +172,7 @@ export default function ClassAssignmentsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {isTeacherOrHybrid ? (
+            {isTeacher ? (
               <button
                 type="button"
                 onClick={() => setIsCreateAssignmentModalOpen(true)}
@@ -377,7 +355,7 @@ export default function ClassAssignmentsPage() {
                               </div>
 
                               <div className="flex min-w-[170px] flex-col items-end gap-3">
-                                {isTeacherOrHybrid && (
+                                {isTeacher && (
                                   <button
                                     type="button"
                                     onClick={() =>

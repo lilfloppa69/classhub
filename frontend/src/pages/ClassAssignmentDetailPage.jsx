@@ -600,11 +600,16 @@ export default function ClassAssignmentDetailPage() {
   const isTeacherView = useMemo(() => {
     if (!assignment?.class || !user?._id) return false
 
+    const userId = String(user._id)
     const teacherId = String(
       assignment.class.teacher?._id || assignment.class.teacher || '',
     )
 
-    return teacherId === String(user._id)
+    if (teacherId === userId) return true
+
+    return (assignment.class.coTeachers || []).some(
+      (teacher) => String(teacher?._id || teacher) === userId,
+    )
   }, [assignment, user])
 
   const attachmentItems = assignment?.teacherFiles || []

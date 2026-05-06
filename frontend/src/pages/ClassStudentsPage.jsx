@@ -218,6 +218,17 @@ export default function ClassStudentsPage() {
               No teacher data
             </div>
           )}
+          {(studentsData.coTeachers || []).map((teacher) => (
+            <StudentCard
+              key={teacher._id}
+              name={teacher.displayName}
+              avatar={teacher.avatar}
+              level={teacher.level}
+              levelTitle={teacher.levelTitle}
+              badges={teacher.showcaseAchievements}
+              isTeacher
+            />
+          ))}
         </section>
 
         {/* classmates */}

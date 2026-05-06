@@ -5,6 +5,12 @@ import Assignment from "../models/Assignment.js";
 import generateJoinCode from "../utils/generateJoinCode.js";
 import GeneralForum from "../models/GeneralForum.js";
 import UserAchievement from "../models/UserAchievement.js";
+import {
+  isTeacherRole,
+  isClassTeacher,
+  isClassStudent,
+  canAccessClass,
+} from "../utils/classAccess.js";
 
 const getShowcaseAchievementMap = async (userIds = []) => {
   const displayedAchievements = await UserAchievement.find({
@@ -36,11 +42,20 @@ const getShowcaseAchievementMap = async (userIds = []) => {
 export const getMyClasses = async (req, res) => {
   try {
     const classes = await Class.find({
-      $or: [{ students: req.user._id }, { teacher: req.user._id }],
-    }).populate(
-      "teacher",
-      "fullName email username nickname avatar displayNamePreference",
-    );
+      $or: [
+        { students: req.user._id },
+        { teacher: req.user._id },
+        { coTeachers: req.user._id },
+      ],
+    })
+      .populate(
+        "teacher",
+        "fullName email username nickname avatar displayNamePreference",
+      )
+      .populate(
+        "coTeachers",
+        "fullName email username nickname avatar displayNamePreference",
+      );
     const grouped = {
       Monday: [],
       Tuesday: [],
@@ -58,6 +73,7 @@ export const getMyClasses = async (req, res) => {
           title: cls.title,
           subject: cls.subject,
           teacher: cls.teacher,
+          coTeachers: cls.coTeachers || [],
           startTime: sch.startTime,
           endTime: sch.endTime,
         });
@@ -89,6 +105,10 @@ export const getClassById = async (req, res) => {
       )
       .populate(
         "students",
+        "fullName email username nickname avatar displayNamePreference",
+      )
+      .populate(
+        "coTeachers",
         "fullName email username nickname avatar displayNamePreference",
       );
 
@@ -135,12 +155,8 @@ export const getClassById = async (req, res) => {
       ),
     }));
 
-    const isTeacher =
-      foundClass.teacher?._id.toString() === req.user._id.toString();
-
-    const isStudent = foundClass.students.some(
-      (student) => student._id.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
+    const isStudent = isClassStudent(foundClass, req.user._id);
 
     if (!isTeacher && !isStudent) {
       return res.status(403).json({
@@ -187,11 +203,58 @@ export const joinClass = async (req, res) => {
       });
     }
 
-    const alreadyJoined = foundClass.students.some(
-      (studentId) => studentId.toString() === req.user._id.toString(),
+    const isOwner = String(foundClass.teacher) === String(req.user._id);
+    const alreadyStudent = foundClass.students.some(
+      (studentId) => String(studentId) === String(req.user._id),
+    );
+    const alreadyCoTeacher = (foundClass.coTeachers || []).some(
+      (teacherId) => String(teacherId) === String(req.user._id),
     );
 
-    if (alreadyJoined) {
+    if (isOwner) {
+      return res.status(400).json({
+        success: false,
+        message: "You already own this class",
+      });
+    }
+
+    if (req.user.role === "teacher") {
+      if (alreadyCoTeacher) {
+        return res.status(400).json({
+          success: false,
+          message: "You already joined this class as co-teacher",
+        });
+      }
+
+      if (alreadyStudent) {
+        foundClass.students = foundClass.students.filter(
+          (studentId) => String(studentId) !== String(req.user._id),
+        );
+      }
+
+      foundClass.coTeachers.push(req.user._id);
+      await foundClass.save();
+
+      await Assignment.updateMany(
+        { classId: foundClass._id },
+        {
+          $pull: {
+            assignedStudents: req.user._id,
+            submissions: { student: req.user._id },
+          },
+        },
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: alreadyStudent
+          ? "Moved from student to co-teacher"
+          : "Joined class successfully as co-teacher",
+        data: foundClass,
+      });
+    }
+
+    if (alreadyStudent) {
       return res.status(400).json({
         success: false,
         message: "You already joined this class",
@@ -225,6 +288,10 @@ export const getClassStudents = async (req, res) => {
         "username fullName nickname avatar level displayNamePreference",
       )
       .populate(
+        "coTeachers",
+        "username fullName nickname avatar level displayNamePreference",
+      )
+      .populate(
         "students",
         "username fullName nickname avatar level displayNamePreference",
       );
@@ -236,12 +303,8 @@ export const getClassStudents = async (req, res) => {
       });
     }
 
-    const isTeacher =
-      foundClass.teacher?._id.toString() === req.user._id.toString();
-
-    const isStudent = foundClass.students.some(
-      (student) => student._id.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
+    const isStudent = isClassStudent(foundClass, req.user._id);
 
     if (!isTeacher && !isStudent) {
       return res.status(403).json({
@@ -252,6 +315,7 @@ export const getClassStudents = async (req, res) => {
 
     const userIds = [
       foundClass.teacher?._id,
+      ...(foundClass.coTeachers || []).map((teacher) => teacher._id),
       ...foundClass.students.map((student) => student._id),
     ].filter(Boolean);
 
@@ -279,6 +343,7 @@ export const getClassStudents = async (req, res) => {
       message: "Class students fetched successfully",
       data: {
         teacher: foundClass.teacher ? formatUser(foundClass.teacher) : null,
+        coTeachers: (foundClass.coTeachers || []).map(formatUser),
         classmates: foundClass.students.map(formatUser),
       },
     });
@@ -312,12 +377,8 @@ export const getClassLeaderboard = async (req, res) => {
       });
     }
 
-    const isTeacher =
-      foundClass.teacher?._id.toString() === req.user._id.toString();
-
-    const isStudent = foundClass.students.some(
-      (student) => student._id.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
+    const isStudent = isClassStudent(foundClass, req.user._id);
 
     if (!isTeacher && !isStudent) {
       return res.status(403).json({
@@ -470,6 +531,27 @@ export const leaveClass = async (req, res) => {
       });
     }
 
+    const isCoTeacher = (foundClass.coTeachers || []).some(
+      (teacherId) => String(teacherId) === String(req.user._id),
+    );
+
+    if (isCoTeacher) {
+      foundClass.coTeachers = foundClass.coTeachers.filter(
+        (teacherId) => String(teacherId) !== String(req.user._id),
+      );
+
+      await foundClass.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "You have left the class as co-teacher",
+        data: {
+          deleted: false,
+          classId,
+        },
+      });
+    }
+
     const isStudent = foundClass.students.some(
       (studentId) => studentId.toString() === req.user._id.toString(),
     );
@@ -506,10 +588,10 @@ export const leaveClass = async (req, res) => {
 
 export const createClass = async (req, res) => {
   try {
-    if (req.user.role !== "hybrid") {
+    if (req.user.role !== "teacher") {
       return res.status(403).json({
         success: false,
-        message: "Only hybrid users can create classes",
+        message: "Only teachers can create classes",
       });
     }
 
@@ -533,6 +615,7 @@ export const createClass = async (req, res) => {
       subject: subject.trim(),
       description: description?.trim() || "",
       teacher: req.user._id,
+      coTeachers: [],
       schedule,
       joinCode,
       students: [],
@@ -573,34 +656,19 @@ export const getClassAssignments = async (req, res) => {
       });
     }
 
-    const isTeacher =
-      String(joinedClass.teacher || "") === String(req.user._id);
+    const isTeacher = isClassTeacher(joinedClass, req.user._id);
+    const isStudentMember = isClassStudent(joinedClass, req.user._id);
 
-    const isStudentMember = joinedClass.students.some(
-      (studentId) => String(studentId) === String(req.user._id),
-    );
-
-    const isHybridStudent = req.user.role === "hybrid" && isStudentMember;
-
-    if (!isTeacher && !isStudentMember && !isHybridStudent) {
+    if (!isTeacher && !isStudentMember) {
       return res.status(403).json({
         success: false,
         message: "You do not have access to this class",
       });
     }
-
-    if (!joinedClass) {
-      return res.status(403).json({
-        success: false,
-        message: "You do not have access to this class",
-      });
-    }
-
-    const isHybrid = req.user.role === "hybrid";
 
     const query = { classId };
 
-    if (!isTeacher && !isHybrid) {
+    if (!isTeacher) {
       query.$or = [
         { assignedStudents: { $size: 0 } },
         { assignedStudents: req.user._id },
@@ -621,10 +689,12 @@ export const getClassAssignments = async (req, res) => {
     assignments.forEach((assignment) => {
       const groupTopic = assignment.topic ?? "General";
 
-      const mySubmission = assignment.submissions.find(
-        (submission) =>
-          submission.student.toString() === req.user._id.toString(),
-      );
+      const mySubmission = isTeacher
+        ? null
+        : assignment.submissions.find(
+            (submission) =>
+              submission.student.toString() === req.user._id.toString(),
+          );
 
       let status = "assigned";
 

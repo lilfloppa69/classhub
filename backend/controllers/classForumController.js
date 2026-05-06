@@ -5,6 +5,7 @@ import path from "path";
 import UserAchievement from "../models/UserAchievement.js";
 import User from "../models/User.js";
 import { checkAchievements } from "../utils/achievementEngine.js";
+import { isClassTeacher, isClassStudent } from "../utils/classAccess.js";
 
 const getShowcaseAchievementMap = async (userIds = []) => {
   const displayedAchievements = await UserAchievement.find({
@@ -79,10 +80,8 @@ const checkClassAccess = async (classId, userId) => {
 
   if (!foundClass) return { error: "Class not found", status: 404 };
 
-  const isTeacher = foundClass.teacher.toString() === userId.toString();
-  const isStudent = foundClass.students.some(
-    (studentId) => studentId.toString() === userId.toString(),
-  );
+  const isTeacher = isClassTeacher(foundClass, userId);
+  const isStudent = isClassStudent(foundClass, userId);
 
   if (!isTeacher && !isStudent) {
     return { error: "You do not have access to this class forum", status: 403 };

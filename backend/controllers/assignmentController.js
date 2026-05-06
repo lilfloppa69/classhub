@@ -2,6 +2,7 @@ import Assignment from "../models/Assignment.js";
 import Class from "../models/Class.js";
 import User from "../models/User.js";
 import { checkAchievements } from "../utils/achievementEngine.js";
+import { isClassTeacher, isClassStudent } from "../utils/classAccess.js";
 
 const startOfDay = (date) => {
   const d = new Date(date);
@@ -89,8 +90,35 @@ const getBaseFileName = (name = "") => {
 
 export const getMyTasks = async (req, res) => {
   try {
+    if (req.user.role === "teacher") {
+      return res.status(200).json({
+        success: true,
+        message: "Teachers do not have assigned tasks",
+        data: {
+          assigned: {
+            noDueDate: [],
+            thisWeek: [],
+            nextWeek: [],
+            later: [],
+          },
+          notSubmitted: {
+            thisWeek: [],
+            lastWeek: [],
+            earlier: [],
+          },
+          completed: {
+            noDueDate: [],
+            completedEarly: [],
+            thisWeek: [],
+            lastWeek: [],
+            earlier: [],
+          },
+        },
+      });
+    }
+
     const myClasses = await Class.find({
-      $or: [{ students: req.user._id }, { teacher: req.user._id }],
+      students: req.user._id,
     }).select("_id title subject");
 
     const myClassIds = myClasses.map((cls) => cls._id);
@@ -221,20 +249,14 @@ export const getMyTasks = async (req, res) => {
   }
 };
 
-const canAccessAssignment = (joinedClass, userId, userRole = "student") => {
-  const isTeacher = String(joinedClass.teacher || "") === String(userId);
-
-  const isStudentMember = joinedClass.students.some(
-    (studentId) => String(studentId) === String(userId),
-  );
-
-  const isHybridStudent = userRole === "hybrid" && isStudentMember;
+const canAccessAssignment = (joinedClass, userId) => {
+  const isTeacher = isClassTeacher(joinedClass, userId);
+  const isStudentMember = isClassStudent(joinedClass, userId);
 
   return {
     isTeacher,
     isStudentMember,
-    isHybridStudent,
-    canAccess: isTeacher || isStudentMember || isHybridStudent,
+    canAccess: isTeacher || isStudentMember,
   };
 };
 
@@ -243,7 +265,7 @@ export const getAssignmentById = async (req, res) => {
     const { assignmentId } = req.params;
 
     const assignment = await Assignment.findById(assignmentId)
-      .populate("classId", "title subject teacher")
+      .populate("classId", "title subject teacher coTeachers students")
       .populate("createdBy", "fullName email")
       .populate("comments.author", "fullName email username displayName");
 
@@ -256,25 +278,17 @@ export const getAssignmentById = async (req, res) => {
 
     const joinedClass = await Class.findById(assignment.classId._id);
 
-    const isTeacher =
-      String(joinedClass.teacher || "") === String(req.user._id);
-
-    const isStudentMember = joinedClass.students.some(
-      (studentId) => String(studentId) === String(req.user._id),
-    );
-
-    const isHybridStudent = req.user.role === "hybrid" && isStudentMember;
-
-    // hybrid yang create / manage class anggap teacher-side
-    const isTeacherView = isTeacher;
-
-    if (!isTeacherView && !isStudentMember && !isHybridStudent) {
+    if (!joinedClass) {
       return res.status(403).json({
         success: false,
         message: "You do not have access to this assignment",
       });
     }
-    if (!joinedClass) {
+
+    const isTeacherView = isClassTeacher(joinedClass, req.user._id);
+    const isStudentMember = isClassStudent(joinedClass, req.user._id);
+
+    if (!isTeacherView && !isStudentMember) {
       return res.status(403).json({
         success: false,
         message: "You do not have access to this assignment",
@@ -294,9 +308,12 @@ export const getAssignmentById = async (req, res) => {
       });
     }
 
-    const mySubmission = assignment.submissions.find(
-      (submission) => submission.student.toString() === req.user._id.toString(),
-    );
+    const mySubmission = isTeacherView
+      ? null
+      : assignment.submissions.find(
+          (submission) =>
+            submission.student.toString() === req.user._id.toString(),
+        );
 
     return res.status(200).json({
       success: true,
@@ -346,7 +363,7 @@ export const createAssignmentComment = async (req, res) => {
 
     const assignment = await Assignment.findById(assignmentId).populate(
       "classId",
-      "teacher students",
+      "teacher coTeachers students",
     );
 
     if (!assignment) {
@@ -356,11 +373,7 @@ export const createAssignmentComment = async (req, res) => {
       });
     }
 
-    const access = canAccessAssignment(
-      assignment.classId,
-      req.user._id,
-      req.user.role,
-    );
+    const access = canAccessAssignment(assignment.classId, req.user._id);
 
     if (!access.canAccess) {
       return res.status(403).json({
@@ -415,7 +428,7 @@ export const deleteAssignmentComment = async (req, res) => {
 
     const assignment = await Assignment.findById(assignmentId).populate(
       "classId",
-      "teacher students",
+      "teacher coTeachers students",
     );
 
     if (!assignment) {
@@ -425,11 +438,7 @@ export const deleteAssignmentComment = async (req, res) => {
       });
     }
 
-    const access = canAccessAssignment(
-      assignment.classId,
-      req.user._id,
-      req.user.role,
-    );
+    const access = canAccessAssignment(assignment.classId, req.user._id);
 
     if (!access.canAccess) {
       return res.status(403).json({
@@ -494,7 +503,7 @@ export const submitAssignment = async (req, res) => {
 
     const assignment = await Assignment.findById(assignmentId).populate(
       "classId",
-      "students",
+      "teacher coTeachers students",
     );
 
     if (!assignment) {
@@ -504,14 +513,20 @@ export const submitAssignment = async (req, res) => {
       });
     }
 
-    const isJoined = assignment.classId.students.some(
-      (studentId) => studentId.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(assignment.classId, req.user._id);
+    const isStudent = isClassStudent(assignment.classId, req.user._id);
 
-    if (!isJoined) {
+    if (isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "You do not have access to this assignment",
+        message: "Teachers cannot submit assignments",
+      });
+    }
+
+    if (!isStudent) {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can submit assignments",
       });
     }
 
@@ -696,7 +711,7 @@ export const cancelSubmission = async (req, res) => {
 
     const assignment = await Assignment.findById(assignmentId).populate(
       "classId",
-      "students",
+      "teacher coTeachers students",
     );
 
     if (!assignment) {
@@ -706,14 +721,20 @@ export const cancelSubmission = async (req, res) => {
       });
     }
 
-    const isJoined = assignment.classId.students.some(
-      (studentId) => studentId.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(assignment.classId, req.user._id);
+    const isStudent = isClassStudent(assignment.classId, req.user._id);
 
-    if (!isJoined) {
+    if (isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "You do not have access to this assignment",
+        message: "Teachers cannot cancel submissions",
+      });
+    }
+
+    if (!isStudent) {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can cancel submissions",
       });
     }
 
@@ -776,7 +797,7 @@ export const getMySubmissionStatus = async (req, res) => {
 
     const assignment = await Assignment.findById(assignmentId)
       .select("dueDate submissions")
-      .populate("classId", "students");
+      .populate("classId", "teacher coTeachers students");
 
     if (!assignment) {
       return res.status(404).json({
@@ -785,14 +806,20 @@ export const getMySubmissionStatus = async (req, res) => {
       });
     }
 
-    const isJoined = assignment.classId.students.some(
-      (studentId) => studentId.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(assignment.classId, req.user._id);
+    const isStudent = isClassStudent(assignment.classId, req.user._id);
 
-    if (!isJoined) {
+    if (isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "You do not have access to this assignment",
+        message: "Teachers do not have submission status",
+      });
+    }
+
+    if (!isStudent) {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can access submission status",
       });
     }
 
@@ -865,12 +892,12 @@ export const createAssignment = async (req, res) => {
       });
     }
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can create assignment",
+        message: "Only teachers can create assignments",
       });
     }
 
@@ -900,12 +927,25 @@ export const createAssignment = async (req, res) => {
     }
 
     // DETERMINE ASSIGNED STUDENTS
+    const classStudentIds = foundClass.students.map((studentId) =>
+      studentId.toString(),
+    );
+
     let studentsToAssign = [];
 
     if (assignedStudents.length === 0) {
       studentsToAssign = foundClass.students;
     } else {
-      studentsToAssign = assignedStudents;
+      studentsToAssign = assignedStudents.filter((studentId) =>
+        classStudentIds.includes(studentId.toString()),
+      );
+    }
+
+    if (studentsToAssign.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid students selected",
+      });
     }
 
     const submissions = studentsToAssign.map((studentId) => ({
@@ -915,6 +955,19 @@ export const createAssignment = async (req, res) => {
       score: 0,
       xp: 0,
       submittedAt: null,
+      evaluation: {
+        requiredObjectives: [],
+        bonusObjectives: [],
+        autoRules: [],
+        autoGradingDisabled: false,
+        teacherComment: "",
+      },
+      activityHistory: [
+        {
+          type: "assigned",
+          date: new Date(),
+        },
+      ],
     }));
 
     const assignment = await Assignment.create({
@@ -969,12 +1022,12 @@ export const updateAssignment = async (req, res) => {
       });
     }
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can edit assignment",
+        message: "Only teachers can edit assignment",
       });
     }
 
@@ -1020,10 +1073,21 @@ export const updateAssignment = async (req, res) => {
       assignment.autoGradingRules = autoGradingRules;
     }
 
+    const classStudentIds = foundClass.students.map((id) => id.toString());
+
     const targetStudentIds =
       Array.isArray(assignedStudents) && assignedStudents.length > 0
-        ? assignedStudents.map((id) => id.toString())
-        : foundClass.students.map((id) => id.toString());
+        ? assignedStudents
+            .map((id) => id.toString())
+            .filter((id) => classStudentIds.includes(id))
+        : classStudentIds;
+
+    if (targetStudentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid students selected",
+      });
+    }
 
     assignment.assignedStudents = targetStudentIds;
 
@@ -1093,14 +1157,12 @@ export const uploadAssignmentFile = async (req, res) => {
       });
     }
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
-    const isHybridTeacher = req.user.role === "hybrid";
-
-    if (!isTeacher && !isHybridTeacher) {
+    if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher or hybrid can upload assignment files",
+        message: "Only teachers can upload assignment files",
       });
     }
 
@@ -1172,7 +1234,7 @@ export const getAssignmentStudents = async (req, res) => {
     const { assignmentId } = req.params;
 
     const assignment = await Assignment.findById(assignmentId)
-      .populate("classId", "students")
+      .populate("classId", "teacher coTeachers students")
       .populate("submissions.student", "fullName email username");
 
     if (!assignment) {
@@ -1184,12 +1246,19 @@ export const getAssignmentStudents = async (req, res) => {
 
     const classData = await Class.findById(assignment.classId);
 
-    const isTeacher = classData.teacher.toString() === req.user._id.toString();
+    if (!classData) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const isTeacher = isClassTeacher(classData, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can access evaluation",
+        message: "Only teachers can access evaluation",
       });
     }
 
@@ -1240,7 +1309,7 @@ export const uploadSubmissionFile = async (req, res) => {
 
     const assignment = await Assignment.findById(assignmentId).populate(
       "classId",
-      "students",
+      "teacher coTeachers students",
     );
 
     if (!assignment) {
@@ -1250,14 +1319,20 @@ export const uploadSubmissionFile = async (req, res) => {
       });
     }
 
-    const isJoined = assignment.classId.students.some(
-      (studentId) => studentId.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(assignment.classId, req.user._id);
+    const isStudent = isClassStudent(assignment.classId, req.user._id);
 
-    if (!isJoined) {
+    if (isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "You do not have access to this assignment",
+        message: "Teachers cannot upload submission files",
+      });
+    }
+
+    if (!isStudent) {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can upload submission files",
       });
     }
 
@@ -1348,12 +1423,12 @@ export const getSubmissionForEvaluation = async (req, res) => {
       });
     }
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can evaluate",
+        message: "Only teachers can evaluate",
       });
     }
 
@@ -1433,12 +1508,19 @@ export const evaluateSubmission = async (req, res) => {
 
     const foundClass = await Class.findById(assignment.classId);
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    if (!foundClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can evaluate",
+        message: "Only teachers can evaluate",
       });
     }
 
@@ -1567,12 +1649,19 @@ export const cancelReturnedSubmission = async (req, res) => {
 
     const foundClass = await Class.findById(assignment.classId);
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    if (!foundClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can cancel returned submission",
+        message: "Only teachers can cancel returned submission",
       });
     }
 
@@ -1622,20 +1711,30 @@ export const evaluateAllSubmissions = async (req, res) => {
 
     const foundClass = await Class.findById(assignment.classId);
 
-    const isTeacher = foundClass.teacher.toString() === req.user._id.toString();
+    if (!foundClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can evaluate",
+        message: "Only teachers can evaluate",
       });
     }
 
     assignment.submissions.forEach((submission) => {
       submission.score =
-        score > assignment.maximumScore ? assignment.maximumScore : score;
+        Number(score || 0) > assignment.maximumScore
+          ? assignment.maximumScore
+          : Number(score || 0);
 
-      submission.xp = xp;
+      submission.xp = Math.max(Number(xp || 0), 0);
+      submission.status = "evaluated";
     });
 
     await assignment.save();
@@ -1663,6 +1762,10 @@ export const getClassGradebook = async (req, res) => {
         "username fullName nickname avatar displayNamePreference",
       )
       .populate(
+        "coTeachers",
+        "username fullName nickname avatar displayNamePreference",
+      )
+      .populate(
         "students",
         "username fullName nickname avatar displayNamePreference",
       );
@@ -1674,17 +1777,12 @@ export const getClassGradebook = async (req, res) => {
       });
     }
 
-    const isTeacher =
-      foundClass.teacher?._id.toString() === req.user._id.toString();
-
-    const isStudent = foundClass.students.some(
-      (student) => student._id.toString() === req.user._id.toString(),
-    );
+    const isTeacher = isClassTeacher(foundClass, req.user._id);
 
     if (!isTeacher) {
       return res.status(403).json({
         success: false,
-        message: "Only teacher can access gradebook",
+        message: "Only teachers can access gradebook",
       });
     }
 

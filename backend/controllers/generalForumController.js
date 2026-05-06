@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import UserAchievement from "../models/UserAchievement.js";
 import User from "../models/User.js";
 import { checkAchievements } from "../utils/achievementEngine.js";
+import { isClassStudent, isClassTeacher } from "../utils/classAccess.js";
 
 const getShowcaseAchievementMap = async (userIds = []) => {
   const displayedAchievements = await UserAchievement.find({
@@ -95,7 +96,7 @@ export const getGeneralForums = async (req, res) => {
         "author",
         "username fullName nickname avatar displayNamePreference",
       )
-      .populate("associatedClass", "title subject teacher students")
+      .populate("associatedClass", "title subject teacher coTeachers students")
       .sort({ createdAt: -1 });
 
     forums = forums.filter((forum) => {
@@ -116,12 +117,8 @@ export const getGeneralForums = async (req, res) => {
       if (forum.associationType === "general") return true;
 
       if (forum.associationType === "class" && forum.associatedClass) {
-        const isTeacher =
-          forum.associatedClass.teacher?.toString() === req.user._id.toString();
-
-        const isStudent = forum.associatedClass.students?.some(
-          (studentId) => studentId.toString() === req.user._id.toString(),
-        );
+        const isTeacher = isClassTeacher(forum.associatedClass, req.user._id);
+        const isStudent = isClassStudent(forum.associatedClass, req.user._id);
 
         return isTeacher || isStudent;
       }
@@ -219,12 +216,8 @@ export const getGeneralForumById = async (req, res) => {
     }
 
     if (forum.associationType === "class" && forum.associatedClass) {
-      const isTeacher =
-        forum.associatedClass.teacher?.toString() === req.user._id.toString();
-
-      const isStudent = forum.associatedClass.students?.some(
-        (studentId) => studentId.toString() === req.user._id.toString(),
-      );
+      const isTeacher = isClassTeacher(forum.associatedClass, req.user._id);
+      const isStudent = isClassStudent(forum.associatedClass, req.user._id);
 
       if (!isTeacher && !isStudent) {
         return res.status(403).json({
@@ -364,12 +357,8 @@ export const createGeneralForum = async (req, res) => {
         });
       }
 
-      const isTeacher =
-        foundClass.teacher.toString() === req.user._id.toString();
-
-      const isStudent = foundClass.students.some(
-        (studentId) => studentId.toString() === req.user._id.toString(),
-      );
+      const isTeacher = isClassTeacher(foundClass, req.user._id);
+      const isStudent = isClassStudent(foundClass, req.user._id);
 
       if (!isTeacher && !isStudent) {
         return res.status(403).json({

@@ -4,71 +4,77 @@ import User from "../models/User.js";
 import { validateSpecialization } from "../utils/specializations.js";
 
 export const registerUser = async (req, res) => {
-    try {
-        const { username, fullName, email, password, phoneCountryCode, phoneNumber } = req.body;
+  try {
+    const {
+      username,
+      fullName,
+      email,
+      password,
+      phoneCountryCode,
+      phoneNumber,
+    } = req.body;
 
-        // validasi
-        if (!username || !fullName || !email || !password || !phoneNumber) {
-            return res.status(400).json({
-                success: false,
-                message: "All fields are required",
-            });
-        }
-
-        // email has been registered or not?
-        const existingEmail = await User.findOne({ email });
-        if (existingEmail) {
-            return res.status(400).json({
-                success: false,
-                message: "Email is not available",
-            });
-        }
-
-        // available username?
-        const existingUsername = await User.findOne({ username });
-        if (existingUsername) {
-        return res.status(400).json({
-            success: false,
-            message: "Username is not available",
-        });
-        }
-
-        // hash password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        // simpan user baru
-        const user = await User.create({
-        username,
-        fullName,
-        email,
-        password: hashedPassword,
-        phoneCountryCode,
-        phoneNumber,
-        });
-
-        return res.status(201).json({
-        success: true,
-        message: "User has been registered",
-        data: {
-            _id: user._id,
-            username: user.username,
-            fullName: user.fullName,
-            email: user.email,
-            phoneCountryCode: user.phoneCountryCode,
-            phoneNumber: user.phoneNumber,
-            role: user.role,
-        },
-        });
-    } catch (error) {
-        return res.status(500).json({
+    // validasi
+    if (!username || !fullName || !email || !password || !phoneNumber) {
+      return res.status(400).json({
         success: false,
-        message: "Server error",
-        error: error.message,
-        });
-
+        message: "All fields are required",
+      });
     }
-}
+
+    // email has been registered or not?
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is not available",
+      });
+    }
+
+    // available username?
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(400).json({
+        success: false,
+        message: "Username is not available",
+      });
+    }
+
+    // hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // simpan user baru
+    const user = await User.create({
+      username,
+      fullName,
+      email,
+      password: hashedPassword,
+      phoneCountryCode,
+      phoneNumber,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "User has been registered",
+      data: {
+        _id: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+        phoneCountryCode: user.phoneCountryCode,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
 
 export const loginUser = async (req, res) => {
   try {
@@ -103,7 +109,7 @@ export const loginUser = async (req, res) => {
         role: user.role,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "2h" }
+      { expiresIn: "2h" },
     );
 
     return res.status(200).json({
@@ -141,13 +147,12 @@ export const getMe = async (req, res) => {
       success: false,
       message: "Server error",
       error: error.message,
-    })
+    });
   }
-}
+};
 
 export const registerHybrid = async (req, res) => {
   try {
-
     const {
       username,
       fullName,
@@ -157,7 +162,7 @@ export const registerHybrid = async (req, res) => {
       phoneNumber,
       gender,
       specialization,
-      bio
+      bio,
     } = req.body;
 
     if (
@@ -208,14 +213,14 @@ export const registerHybrid = async (req, res) => {
       phoneCountryCode,
       phoneNumber,
       gender,
-      role: "hybrid",
+      role: "teacher",
       specialization,
-      bio: bio || ""
+      bio: bio || "",
     });
 
     return res.status(201).json({
       success: true,
-      message: "Hybrid user has been registered",
+      message: "Teacher user has been registered",
       data: {
         _id: user._id,
         username: user.username,
@@ -223,17 +228,14 @@ export const registerHybrid = async (req, res) => {
         email: user.email,
         role: user.role,
         specialization: user.specialization,
-        bio: user.bio
-      }
+        bio: user.bio,
+      },
     });
-
   } catch (error) {
-
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message
+      error: error.message,
     });
-
   }
 };

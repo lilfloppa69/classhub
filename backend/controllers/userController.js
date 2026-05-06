@@ -220,6 +220,12 @@ export const deleteAvatar = async (req, res) => {
 export const getMyShowcase = async (req, res) => {
   try {
     const userId = req.user._id;
+    if (req.user.role === "teacher") {
+      return res.status(403).json({
+        success: false,
+        message: "Showcase is only available for students",
+      });
+    }
 
     const user = await User.findById(userId).select("level xp");
     if (!user) {
@@ -387,6 +393,13 @@ export const getMyShowcase = async (req, res) => {
 
 export const toggleDisplayAchievement = async (req, res) => {
   try {
+    if (req.user.role === "teacher") {
+      return res.status(403).json({
+        success: false,
+        message: "Achievement showcase is only available for students",
+      });
+    }
+
     const userId = req.user._id;
     const { achievementId } = req.body;
 
@@ -542,14 +555,14 @@ export const becomeHybrid = async (req, res) => {
       });
     }
 
-    if (user.role === "hybrid") {
+    if (user.role === "teacher") {
       return res.status(400).json({
         success: false,
-        message: "User is already a hybrid",
+        message: "User is already a teacher",
       });
     }
 
-    user.role = "hybrid";
+    user.role = "teacher";
     user.specialization = specialization;
     user.bio = bio || "";
 
@@ -557,7 +570,7 @@ export const becomeHybrid = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Successfully became a hybrid",
+      message: "Successfully became a teacher",
       data: {
         role: user.role,
         specialization: user.specialization,

@@ -235,11 +235,20 @@ export default function ClassDetail({ activeTab }) {
     }
   }, [activeTab, classId, navigate])
 
-  const classLink = `${window.location.origin}/classes/${classId}`
+  // const classLink = `${window.location.origin}/classes/${classId}`
 
-  const isTeacher =
-    classData?.teacher?._id?.toString?.() === user?._id?.toString?.() ||
-    classData?.teacher?.toString?.() === user?._id?.toString?.()
+  const isTeacher = useMemo(() => {
+    if (!classData || !user?._id) return false
+
+    const userId = String(user._id)
+    const ownerId = String(classData.teacher?._id || classData.teacher || '')
+
+    if (ownerId === userId) return true
+
+    return (classData.coTeachers || []).some(
+      (teacher) => String(teacher?._id || teacher) === userId,
+    )
+  }, [classData, user])
 
   const scheduleText =
     classData?.schedule?.length > 0
@@ -276,12 +285,17 @@ export default function ClassDetail({ activeTab }) {
       .slice(0, 6)
   }, [classData])
 
-  const handleCopyLink = async () => {
+  const handleCopyJoinCode = async () => {
+    if (!classData?.joinCode) {
+      toast.error('Class code not available')
+      return
+    }
+
     try {
-      await navigator.clipboard.writeText(classLink)
-      toast.success('Class link copied')
+      await navigator.clipboard.writeText(classData.joinCode)
+      toast.success('Class code copied')
     } catch (error) {
-      toast.error('Failed to copy link')
+      toast.error('Failed to copy class code')
     }
   }
 
@@ -354,7 +368,7 @@ export default function ClassDetail({ activeTab }) {
 
                 <button
                   type="button"
-                  onClick={handleCopyLink}
+                  onClick={handleCopyJoinCode}
                   className="inline-flex items-center justify-center gap-2 rounded-[16px] bg-white px-5 py-3 text-sm font-semibold text-[#5f55e8] transition hover:brightness-95"
                 >
                   <Copy className="h-4 w-4" />
@@ -365,25 +379,29 @@ export default function ClassDetail({ activeTab }) {
           </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={() => setIsAchievementModalOpen(true)}
-              className="inline-flex h-12 items-center gap-3 rounded-[18px] bg-[#4e83f1] px-5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(78,131,241,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
-                <Plus className="h-4 w-4" />
-              </span>
-              Create Achievement
-            </button>
+            {isTeacher ? (
+              <button
+                type="button"
+                onClick={() => setIsAchievementModalOpen(true)}
+                className="inline-flex h-12 items-center gap-3 rounded-[18px] bg-[#4e83f1] px-5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(78,131,241,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+                  <Plus className="h-4 w-4" />
+                </span>
+                Create Achievement
+              </button>
+            ) : null}
 
-            <button
-              type="button"
-              onClick={() => setIsAnnouncementModalOpen(true)}
-              className="inline-flex h-12 items-center gap-3 rounded-[18px] bg-[#f7c948] px-5 text-sm font-semibold text-slate-900 shadow-[0_12px_28px_rgba(247,201,72,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
-            >
-              <Megaphone className="h-5 w-5" />
-              Announce Something
-            </button>
+            {isTeacher ? (
+              <button
+                type="button"
+                onClick={() => setIsAnnouncementModalOpen(true)}
+                className="inline-flex h-12 items-center gap-3 rounded-[18px] bg-[#f7c948] px-5 text-sm font-semibold text-slate-900 shadow-[0_12px_28px_rgba(247,201,72,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
+              >
+                <Megaphone className="h-5 w-5" />
+                Announce Something
+              </button>
+            ) : null}
 
             <button
               type="button"

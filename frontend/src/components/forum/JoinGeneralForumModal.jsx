@@ -5,8 +5,10 @@ import { Link as LinkIcon, X } from 'lucide-react'
 import api from '../../services/api'
 
 export default function JoinGeneralForumModal({ isOpen, onClose, onJoined }) {
+  const navigate = useNavigate()
   const [inviteToken, setInviteToken] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
   useEffect(() => {
     if (isOpen) {
       setInviteToken('')
@@ -14,8 +16,6 @@ export default function JoinGeneralForumModal({ isOpen, onClose, onJoined }) {
   }, [isOpen])
 
   if (!isOpen) return null
-
-  const navigate = useNavigate()
 
   const handleJoin = async (e) => {
     e.preventDefault()
@@ -32,9 +32,7 @@ export default function JoinGeneralForumModal({ isOpen, onClose, onJoined }) {
         inviteToken: inviteToken.trim(),
       })
 
-      const joinedForum = res.data?.data || null
-
-      toast.success('Forum joined')
+      const joinedForum = res.data?.data || null / toast.success('Forum joined')
       setInviteToken('')
       onJoined?.()
       onClose?.()
