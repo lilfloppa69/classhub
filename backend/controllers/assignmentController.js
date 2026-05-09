@@ -931,24 +931,23 @@ export const createAssignment = async (req, res) => {
       studentId.toString(),
     );
 
-    let studentsToAssign = [];
+    const isAssignedToAll =
+      !Array.isArray(assignedStudents) || assignedStudents.length === 0;
 
-    if (assignedStudents.length === 0) {
-      studentsToAssign = foundClass.students;
-    } else {
-      studentsToAssign = assignedStudents.filter((studentId) =>
-        classStudentIds.includes(studentId.toString()),
-      );
-    }
+    const targetStudentIds = isAssignedToAll
+      ? classStudentIds
+      : assignedStudents
+          .map((studentId) => studentId.toString())
+          .filter((studentId) => classStudentIds.includes(studentId));
 
-    if (studentsToAssign.length === 0) {
+    if (!isAssignedToAll && targetStudentIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: "No valid students selected",
       });
     }
 
-    const submissions = studentsToAssign.map((studentId) => ({
+    const submissions = targetStudentIds.map((studentId) => ({
       student: studentId,
       status: "assigned",
       files: [],
@@ -982,7 +981,7 @@ export const createAssignment = async (req, res) => {
       bonusObjectives,
       autoGradingRules,
       teacherFiles,
-      assignedStudents: studentsToAssign,
+      assignedStudents: isAssignedToAll ? [] : targetStudentIds,
       submissions,
     });
 
@@ -1075,21 +1074,23 @@ export const updateAssignment = async (req, res) => {
 
     const classStudentIds = foundClass.students.map((id) => id.toString());
 
-    const targetStudentIds =
-      Array.isArray(assignedStudents) && assignedStudents.length > 0
-        ? assignedStudents
-            .map((id) => id.toString())
-            .filter((id) => classStudentIds.includes(id))
-        : classStudentIds;
+    const isAssignedToAll =
+      !Array.isArray(assignedStudents) || assignedStudents.length === 0;
 
-    if (targetStudentIds.length === 0) {
+    const targetStudentIds = isAssignedToAll
+      ? classStudentIds
+      : assignedStudents
+          .map((id) => id.toString())
+          .filter((id) => classStudentIds.includes(id));
+
+    if (!isAssignedToAll && targetStudentIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: "No valid students selected",
       });
     }
 
-    assignment.assignedStudents = targetStudentIds;
+    assignment.assignedStudents = isAssignedToAll ? [] : targetStudentIds;
 
     const existingSubmissionMap = new Map(
       assignment.submissions.map((submission) => [

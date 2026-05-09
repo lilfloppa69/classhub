@@ -38,7 +38,37 @@ app.use("/api/forum", generalForumRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/my-profile", userRoutes);
 app.use("/api/calendar", calendarRoutes);
-app.use("/uploads", express.static(path.resolve("uploads")));
+app.use(
+  "/uploads",
+  express.static(path.resolve("uploads"), {
+    setHeaders: (res, filePath) => {
+      const fileName = path.basename(filePath).replace(/"/g, "");
+      const ext = path.extname(filePath).toLowerCase();
+
+      res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+
+      if (ext === ".pdf") {
+        res.setHeader("Content-Type", "application/pdf");
+      }
+
+      if ([".jpg", ".jpeg"].includes(ext)) {
+        res.setHeader("Content-Type", "image/jpeg");
+      }
+
+      if (ext === ".png") {
+        res.setHeader("Content-Type", "image/png");
+      }
+
+      if (ext === ".gif") {
+        res.setHeader("Content-Type", "image/gif");
+      }
+
+      if (ext === ".webp") {
+        res.setHeader("Content-Type", "image/webp");
+      }
+    },
+  }),
+);
 
 // test route
 app.get("/", (req, res) => {

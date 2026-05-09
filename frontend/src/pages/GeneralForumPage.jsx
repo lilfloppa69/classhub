@@ -55,7 +55,7 @@ function ForumRow({ item, onClick }) {
 
         <div className="min-w-0">
           <p className="truncate text-[15px] font-semibold text-slate-800 transition group-hover:text-violet-700">
-            {item.title || 'Untitled Forum'}
+            {getPlainText(item.title) || 'Untitled Forum'}
           </p>
 
           <p className="mt-1 text-[12px] text-slate-500">
@@ -148,6 +148,11 @@ function buildAvatarUrl(avatar) {
   const normalizedAvatar = avatar.startsWith('/') ? avatar : `/${avatar}`
 
   return `${originOnly}${normalizedAvatar}`
+}
+
+function getPlainText(html = '') {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return doc.body.textContent || ''
 }
 
 export default function GeneralForumPage() {

@@ -22,6 +22,7 @@ import ClassForumModal from '../components/forum/ClassForumModal'
 import CreateClassAchievementModal from '../components/class-detail/CreateClassAchievementModal'
 import { useAuth } from '../context/AuthContext'
 import { getClassAchievements } from '../services/achievementService'
+import ClassAchievementDetailModal from '../components/class-detail/ClassAchievementDetailModal'
 
 function StatActionCard({
   icon: Icon,
@@ -186,6 +187,7 @@ export default function ClassDetail({ activeTab }) {
     classmates: [],
   })
   const [classAchievements, setClassAchievements] = useState([])
+  const [selectedAchievement, setSelectedAchievement] = useState(null)
 
   const fetchClassDetail = async () => {
     try {
@@ -504,14 +506,16 @@ export default function ClassDetail({ activeTab }) {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsAchievementModalOpen(true)}
-                  className="inline-flex h-11 shrink-0 items-center gap-2 rounded-[16px] bg-white px-4 text-sm font-semibold text-[#5f55e8] transition hover:brightness-95"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add
-                </button>
+                {isTeacher ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsAchievementModalOpen(true)}
+                    className="inline-flex h-11 shrink-0 items-center gap-2 rounded-[16px] bg-white px-4 text-sm font-semibold text-[#5f55e8] transition hover:brightness-95"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add
+                  </button>
+                ) : null}
               </div>
 
               <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
@@ -521,9 +525,7 @@ export default function ClassDetail({ activeTab }) {
                       <ClassAchievementItem
                         key={achievement._id}
                         achievement={achievement}
-                        onClick={() => {
-                          toast('Achievement detail modal nanti kita sambung')
-                        }}
+                        onClick={() => setSelectedAchievement(achievement)}
                       />
                     ))}
                   </div>
@@ -587,6 +589,12 @@ export default function ClassDetail({ activeTab }) {
           fetchClassAchievements()
           toast.success('Achievement ready for this class')
         }}
+      />
+
+      <ClassAchievementDetailModal
+        isOpen={!!selectedAchievement}
+        onClose={() => setSelectedAchievement(null)}
+        achievement={selectedAchievement}
       />
     </>
   )

@@ -56,18 +56,76 @@ function getRuleLabel(ruleType) {
   }
 }
 
+function getCleanUrl(url = '') {
+  return String(url).split('?')[0].split('#')[0].toLowerCase()
+}
+
+function getFileName(file) {
+  return String(file?.name || file?.originalName || file?.filename || '')
+}
+
+function getFileType(file) {
+  return String(
+    file?.fileType || file?.mimeType || file?.mimetype || '',
+  ).toLowerCase()
+}
+
+function getFileExtension(file) {
+  const name = getFileName(file).toLowerCase()
+  const cleanUrl = getCleanUrl(file?.url || '')
+
+  const source = name || cleanUrl
+  const match = source.match(/\.([a-z0-9]+)$/i)
+
+  return match?.[1] || ''
+}
+
+function buildFileUrl(url = '') {
+  if (!url) return ''
+
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+
+  const apiBase =
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
+    'http://localhost:3000/api'
+
+  const originOnly = apiBase.replace(/\/+$/, '').replace(/\/api$/, '')
+  const normalizedUrl = url.startsWith('/') ? url : `/${url}`
+
+  return `${originOnly}${normalizedUrl}`
+}
+
+function getPreviewFileUrl(file) {
+  return buildFileUrl(file?.previewUrl || file?.url || '')
+}
+
+function getDownloadFileUrl(file) {
+  return buildFileUrl(file?.downloadUrl || file?.url || '')
+}
+
 function isPdfFile(file) {
-  return (
-    file?.fileType === 'pdf' ||
-    String(file?.url || '')
-      .toLowerCase()
-      .endsWith('.pdf')
-  )
+  const type = getFileType(file)
+  const ext = getFileExtension(file)
+
+  return type === 'pdf' || type === 'application/pdf' || ext === 'pdf'
 }
 
 function isImageFile(file) {
-  const url = String(file?.url || '').toLowerCase()
-  return file?.fileType === 'image' || /\.(jpg|jpeg|png|gif|webp)$/i.test(url)
+  const type = getFileType(file)
+  const ext = getFileExtension(file)
+
+  return (
+    type === 'image' ||
+    type.startsWith('image/') ||
+    ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+  )
+}
+
+function isBrowserPreviewableFile(file) {
+  return isImageFile(file) || isPdfFile(file)
 }
 
 function buildInitialChecks(items = [], source = []) {
@@ -438,15 +496,40 @@ export default function ClassAssignmentEvaluationPage() {
     }
   }
 
+  const handleDownloadCurrentFile = () => {
+    const downloadUrl = getDownloadFileUrl(currentFile)
+
+    if (!downloadUrl) {
+      toast.error('File URL not available')
+      return
+    }
+
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = getFileName(currentFile) || 'submitted-file'
+    link.rel = 'noreferrer'
+
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  const handleOpenCurrentFile = () => {
+    const previewUrl = getPreviewFileUrl(currentFile)
+
+    if (!previewUrl) {
+      toast.error('File URL not available')
+      return
+    }
+
+    window.open(previewUrl, '_blank', 'noopener,noreferrer')
+  }
+
   const filePreviewUrl = useMemo(() => {
     if (!currentFile) return ''
 
-    if (isPdfFile(currentFile)) {
-      return `${currentFile.url}#page=${pdfPage}&zoom=${Math.round(imageZoom * 100)}`
-    }
-
-    return currentFile.url
-  }, [currentFile, pdfPage, imageZoom])
+    return getPreviewFileUrl(currentFile)
+  }, [currentFile])
 
   const isBusy = isLoadingAssignment || isLoadingStudents || isLoadingSubmission
 
@@ -579,15 +662,14 @@ export default function ClassAssignmentEvaluationPage() {
           <section className="rounded-[28px] border border-slate-200 bg-white/85 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
             <div className="flex items-center justify-end px-5 pt-5">
               {currentFile ? (
-                <a
-                  href={currentFile.url}
-                  download
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={handleDownloadCurrentFile}
                   className="rounded-full bg-white p-3 text-slate-700 shadow-sm transition hover:bg-violet-50 hover:text-violet-700"
+                  title="Download file"
                 >
                   <Download className="h-5 w-5" />
-                </a>
+                </button>
               ) : null}
             </div>
 
@@ -612,88 +694,126 @@ export default function ClassAssignmentEvaluationPage() {
                     <ChevronRight className="h-5 w-5" />
                   </button>
 
-                  <div className="h-[560px] overflow-auto rounded-[22px] border border-slate-200 bg-slate-50">
+                  <div className="h-[760px] overflow-auto rounded-[22px] border border-slate-200 bg-slate-50">
                     {isImageFile(currentFile) ? (
                       <div className="flex min-h-full items-center justify-center p-6">
                         <img
-                          src={currentFile.url}
-                          alt={currentFile.name || 'Submitted file'}
+                          src={filePreviewUrl}
+                          alt={getFileName(currentFile) || 'Submitted file'}
                           className="max-w-full transition"
                           style={{
                             transform: `scale(${imageZoom})`,
                             transformOrigin: 'center center',
                           }}
+                          onError={() => {
+                            toast.error('Failed to preview image')
+                          }}
                         />
                       </div>
                     ) : isPdfFile(currentFile) ? (
-                      <iframe
-                        title={currentFile.name || 'PDF Preview'}
-                        src={filePreviewUrl}
-                        className="h-full w-full"
-                      />
+                      <object
+                        key={filePreviewUrl}
+                        data={`${filePreviewUrl}#toolbar=0`}
+                        type="application/pdf"
+                        className="h-full w-full bg-white"
+                      >
+                        <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+                          <FileText className="h-16 w-16 text-slate-400" />
+                          <div>
+                            <p className="text-lg font-semibold text-slate-700">
+                              {getFileName(currentFile) || 'PDF Preview'}
+                            </p>
+                            <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                              PDF tidak bisa di-preview di browser ini.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-center gap-3">
+                            <button
+                              type="button"
+                              onClick={handleOpenCurrentFile}
+                              className="rounded-[14px] border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
+                            >
+                              Open file
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDownloadCurrentFile}
+                              className="inline-flex items-center gap-2 rounded-[14px] bg-violet-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-violet-600"
+                            >
+                              <Download className="h-4 w-4" />
+                              Download
+                            </button>
+                          </div>
+                        </div>
+                      </object>
                     ) : (
                       <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
                         <FileText className="h-16 w-16 text-slate-400" />
+
                         <div>
                           <p className="text-lg font-semibold text-slate-700">
-                            {currentFile.name || 'File Review'}
+                            {getFileName(currentFile) || 'File Review'}
                           </p>
-                          <p className="mt-2 text-sm text-slate-500">
-                            This file type is best reviewed by opening or
-                            downloading it.
+
+                          <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                            This file type cannot be previewed safely in the
+                            browser. Open or download it manually.
                           </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleOpenCurrentFile}
+                            className="rounded-[14px] border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
+                          >
+                            Open file
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleDownloadCurrentFile}
+                            className="inline-flex items-center gap-2 rounded-[14px] bg-violet-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-violet-600"
+                          >
+                            <Download className="h-4 w-4" />
+                            Download
+                          </button>
                         </div>
                       </div>
                     )}
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setImageZoom((prev) => Math.max(0.5, prev - 0.2))
-                        }
-                        className="rounded-[14px] border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
-                      >
-                        <ZoomOut className="h-4 w-4" />
-                      </button>
+                  {isImageFile(currentFile) ? (
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImageZoom((prev) => Math.max(0.5, prev - 0.2))
+                          }
+                          className="rounded-[14px] border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
+                        >
+                          <ZoomOut className="h-4 w-4" />
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setImageZoom(1)
-                          setPdfPage(1)
-                        }}
-                        className="rounded-[14px] border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setImageZoom(1)}
+                          className="rounded-[14px] border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setImageZoom((prev) => prev + 0.2)}
-                        className="rounded-[14px] border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
-                      >
-                        <ZoomIn className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    {isPdfFile(currentFile) ? (
-                      <div className="flex items-center gap-3 rounded-[16px] border border-slate-200 bg-slate-900 px-4 py-2 text-white">
-                        <span className="text-sm">Page</span>
-                        <input
-                          value={pdfPage}
-                          onChange={(e) => {
-                            const next = Number(e.target.value || 1)
-                            setPdfPage(next < 1 ? 1 : next)
-                          }}
-                          className="w-16 rounded bg-slate-800 px-2 py-1 text-center text-sm outline-none"
-                        />
-                        <span className="text-sm">/ ?</span>
+                        <button
+                          type="button"
+                          onClick={() => setImageZoom((prev) => prev + 0.2)}
+                          className="rounded-[14px] border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700"
+                        >
+                          <ZoomIn className="h-4 w-4" />
+                        </button>
                       </div>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="flex h-[560px] items-center justify-center rounded-[22px] border border-dashed border-slate-200 bg-slate-50 text-lg font-medium text-slate-400">

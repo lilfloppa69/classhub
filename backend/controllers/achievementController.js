@@ -174,15 +174,41 @@ export const giveClassAchievementEarly = async (req, res) => {
 export const getClassAchievements = async (req, res) => {
   try {
     const { classId } = req.params;
+    const userId = req.user._id;
 
     const achievements = await Achievement.find({
       type: "class",
       classId,
-    }).sort({ createdAt: -1 });
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const achievementIds = achievements.map((achievement) => achievement._id);
+
+    const ownedAchievements = await UserAchievement.find({
+      userId,
+      achievementId: { $in: achievementIds },
+    }).lean();
+
+    const ownedMap = new Map(
+      ownedAchievements.map((item) => [item.achievementId.toString(), item]),
+    );
+
+    const data = achievements.map((achievement) => {
+      const owned = ownedMap.get(achievement._id.toString());
+
+      return {
+        ...achievement,
+        isUnlocked: !!owned,
+        isAchieved: !!owned,
+        earnedAt: owned?.earnedAt || null,
+        userAchievementId: owned?._id || null,
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      data: achievements,
+      data,
     });
   } catch (error) {
     return res.status(500).json({
