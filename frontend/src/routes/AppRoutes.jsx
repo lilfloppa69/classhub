@@ -20,6 +20,7 @@ import BecomeHybridPage from '../pages/BecomeHybridPage'
 import MyProfileAccountPage from '../pages/MyProfileAccountPage'
 import ClassGradesPage from '../pages/ClassGradesPage'
 import Calendar from '../pages/Calendar'
+import ListOfTasksPage from '../pages/ListOfTasksPage'
 
 export default function AppRoutes() {
   return (
@@ -140,6 +141,14 @@ export default function AppRoutes() {
           element={
             <MainLayout>
               <Calendar />
+            </MainLayout>
+          }
+        />
+        <Route
+          path="/tasks"
+          element={
+            <MainLayout>
+              <ListOfTasksPage />
             </MainLayout>
           }
         />

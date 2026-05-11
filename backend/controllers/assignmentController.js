@@ -63,9 +63,12 @@ const getNextWeekRange = (date) => {
 
 const buildTaskCard = (assignment, className, extra = {}) => ({
   _id: assignment._id,
+  assignmentId: assignment._id,
   title: assignment.title,
+  classId: assignment.classId?._id || assignment.classId,
   className,
   assignedAt: assignment.assignedAt,
+  createdAt: assignment.createdAt,
   dueDate: assignment.dueDate,
   ...extra,
 });

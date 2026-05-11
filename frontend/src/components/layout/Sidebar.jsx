@@ -133,7 +133,7 @@ export default function Sidebar({ isCollapsed }) {
           >
             <div className="ml-3 flex flex-col gap-2">
               <Link
-                to="/assigned"
+                to="/tasks"
                 className="rounded-xl px-3 py-2 text-sm transition hover:bg-black/5"
               >
                 List of tasks
