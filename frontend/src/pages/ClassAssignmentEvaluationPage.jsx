@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ChevronLeft,
@@ -14,6 +14,7 @@ import {
   History,
   X,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 
@@ -140,6 +141,11 @@ function buildInitialChecks(items = [], source = []) {
 export default function ClassAssignmentEvaluationPage() {
   const navigate = useNavigate()
   const { classId, assignmentId } = useParams()
+  const { user } = useAuth()
+
+  const hasShownStudentToastRef = useRef(false)
+  const isAuthReady = !!user?.role
+  const canEvaluate = user?.role === 'teacher'
 
   const [assignmentDetail, setAssignmentDetail] = useState(null)
   const [students, setStudents] = useState([])
@@ -176,6 +182,20 @@ export default function ClassAssignmentEvaluationPage() {
   const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false)
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
 
+  const redirectNonTeacher = () => {
+    if (hasShownStudentToastRef.current) return
+
+    hasShownStudentToastRef.current = true
+
+    if (user?.role === 'student') {
+      toast.error("Son you're a student 😭")
+    } else {
+      toast.error('Only teachers can access evaluation')
+    }
+
+    navigate(`/classes/${classId}/assignments`, { replace: true })
+  }
+
   const fetchAssignmentMeta = async () => {
     try {
       setIsLoadingAssignment(true)
@@ -200,6 +220,12 @@ export default function ClassAssignmentEvaluationPage() {
         setSelectedStudentId((prev) => prev || data[0].studentId)
       }
     } catch (error) {
+      if (error.response?.status === 403) {
+        redirectNonTeacher()
+        setStudents([])
+        return
+      }
+
       console.error('Failed to fetch assignment students:', error)
       setStudents([])
     } finally {
@@ -244,6 +270,12 @@ export default function ClassAssignmentEvaluationPage() {
       setPrivateComment(evaluation.teacherComment || '')
       setIsReturnedLocked(data?.status === 'evaluated')
     } catch (error) {
+      if (error.response?.status === 403) {
+        redirectNonTeacher()
+        setSelectedStudentSubmission(null)
+        return
+      }
+
       console.error('Failed to fetch submission for evaluation:', error)
       setSelectedStudentSubmission(null)
       setRequiredChecks([])
@@ -260,15 +292,24 @@ export default function ClassAssignmentEvaluationPage() {
   }
 
   useEffect(() => {
+    if (!isAuthReady) return
+
+    if (!canEvaluate) {
+      redirectNonTeacher()
+      return
+    }
+
     fetchAssignmentMeta()
     fetchStudents()
-  }, [assignmentId])
+  }, [assignmentId, isAuthReady, canEvaluate])
 
   useEffect(() => {
+    if (!isAuthReady || !canEvaluate) return
+
     if (selectedStudentId) {
       fetchSubmissionForStudent(selectedStudentId)
     }
-  }, [selectedStudentId])
+  }, [selectedStudentId, isAuthReady, canEvaluate])
 
   const selectedStudentIndex = useMemo(
     () =>
@@ -532,6 +573,10 @@ export default function ClassAssignmentEvaluationPage() {
   }, [currentFile])
 
   const isBusy = isLoadingAssignment || isLoadingStudents || isLoadingSubmission
+
+  if (!isAuthReady || !canEvaluate) {
+    return null
+  }
 
   return (
     <div className="px-6 py-6">

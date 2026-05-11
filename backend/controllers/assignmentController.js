@@ -94,29 +94,9 @@ const getBaseFileName = (name = "") => {
 export const getMyTasks = async (req, res) => {
   try {
     if (req.user.role === "teacher") {
-      return res.status(200).json({
-        success: true,
-        message: "Teachers do not have assigned tasks",
-        data: {
-          assigned: {
-            noDueDate: [],
-            thisWeek: [],
-            nextWeek: [],
-            later: [],
-          },
-          notSubmitted: {
-            thisWeek: [],
-            lastWeek: [],
-            earlier: [],
-          },
-          completed: {
-            noDueDate: [],
-            completedEarly: [],
-            thisWeek: [],
-            lastWeek: [],
-            earlier: [],
-          },
-        },
+      return res.status(403).json({
+        success: false,
+        message: "Teachers cannot access task list",
       });
     }
 
