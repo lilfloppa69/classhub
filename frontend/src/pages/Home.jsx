@@ -203,7 +203,38 @@ export default function Home({ classViewMode = 'grid' }) {
 
   return (
     <div className="px-3 py-4 sm:px-6 sm:py-6">
-      <div className="relative min-h-[760px] w-full rounded-[32px] bg-[#F8F8F8] px-4 pb-24 pt-6 sm:px-8 lg:px-10">
+      <div className="relative min-h-[760px] w-full rounded-[32px] bg-[#F8F8F8] px-4 pb-24 pt-6 sm:px-8 lg:px-10 overflow-hidden">
+        {/* subtle background carving */}
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.032]"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <pattern
+              id="grid"
+              width="40"
+              height="40"
+              patternUnits="userSpaceOnUse"
+            >
+              <path
+                d="M 40 0 L 0 0 0 40"
+                fill="none"
+                stroke="#000"
+                strokeWidth="1"
+              />
+            </pattern>
+            <pattern
+              id="dots"
+              width="40"
+              height="40"
+              patternUnits="userSpaceOnUse"
+            >
+              <circle cx="20" cy="20" r="1.2" fill="#000" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+          <rect width="100%" height="100%" fill="url(#dots)" />
+        </svg>
         {/* VIEW CONTENT */}
         <div
           key={isDayView ? 'day-view' : 'grid-view'}
@@ -230,6 +261,7 @@ export default function Home({ classViewMode = 'grid' }) {
                 classes.map((cls) => (
                   <ClassCard
                     key={cls._id}
+                    id={cls._id}
                     onClick={() => navigate(`/classes/${cls._id}`)}
                     subject={cls.title || cls.subject}
                     schedule={
