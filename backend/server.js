@@ -21,10 +21,7 @@ const app = express();
 // middleware
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "https://classhub-frontend-production.up.railway.app",
-    ],
+    origin: "http://localhost:5173",
     credentials: true,
   }),
 );
